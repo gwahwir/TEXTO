@@ -1,0 +1,17 @@
+Title: Tax Policy and the Distribution of Wealth
+
+Tax reform and wealth inequality are inseparable topics. The distribution of the tax burden, the structure of incentives embedded in the tax code, and the overall level of public revenue collectively shape the economic landscape in which all other policy operates.
+
+Capital gains taxation has long been a focus of equity debates, as the preferential rates applied to investment income disproportionately benefit wealthy households for whom such income represents a large share of total economic activity. The step-up in basis rule, which eliminates capital gains tax on assets held until death, is particularly contested.
+
+Estate and inheritance tax affects a small fraction of estates but is symbolically significant in debates about intergenerational wealth concentration. The exemption threshold has been raised substantially over time, reducing the number of estates subject to the tax and diminishing its redistributive effect.
+
+Corporate tax policy has been reshaped by multiple rounds of legislation. The global minimum tax initiative, negotiated through the OECD, represents an effort to limit the scope for corporate profit-shifting to low-tax jurisdictions. Its implementation has been uneven as countries balance domestic revenue interests against competitiveness concerns.
+
+Earned income tax credit expansion has strong evidence of positive effects on work incentives and child poverty, making it one of the most effective anti-poverty tools available through the tax code. Child tax credit expansion has similarly demonstrated significant effects on child poverty reduction in periods when it has been at its most generous.
+
+Cryptocurrency regulation has been complicated by the novelty of the asset class and uncertainty about its classification for tax purposes. The IRS has taken the position that cryptocurrency is property rather than currency, with significant implications for reporting requirements.
+
+Fiduciary rule for financial advisors — requiring that advice be in the client's best interest rather than merely suitable — has been repeatedly adopted and challenged, reflecting the industry's resistance to a standard that conflicts with commission-based compensation models.
+
+Property tax reform debates arise in virtually every state, as property taxes fund local services but can be regressive and can displace long-term residents as property values rise.

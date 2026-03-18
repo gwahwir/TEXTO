@@ -1,0 +1,17 @@
+Title: Voting Rights and Electoral Integrity
+
+The health of democratic institutions depends on both the integrity of the electoral process and the breadth of participation. Voting rights and election security have increasingly been framed as competing values, though many experts argue that high-quality, accessible elections can achieve both.
+
+Automatic voter registration has been adopted in a majority of states, significantly increasing registration rates with no evidence of increased fraud. Early voting expansion has similarly shown strong effects on turnout, particularly among working-class voters with inflexible schedules.
+
+Voter ID laws remain contested. Proponents argue they are a commonsense safeguard; opponents point to documented instances of voter disenfranchisement and note that in-person voter fraud is vanishingly rare. Federal courts have issued conflicting rulings on different ID schemes.
+
+Mail-in ballot access expanded dramatically during the pandemic and proved broadly successful in maintaining high turnout under extraordinary circumstances. Several states have since moved to restrict mail voting, citing public confidence concerns.
+
+Gerrymandering reform has advanced through independent redistricting commissions in a number of states, with evidence suggesting more competitive districts and greater demographic representation. However, partisan redistricting remains dominant in most of the country.
+
+Campaign finance reform faces significant constitutional constraints following a series of Supreme Court decisions equating money with speech. Dark money disclosure requirements represent one area where reform is legally achievable without running afoul of existing precedent.
+
+Ranked-choice voting has been adopted in a growing number of cities and states, with proponents arguing it reduces negative campaigning and better reflects voter preferences in multi-candidate races.
+
+Election infrastructure security has received sustained federal attention and funding since documented interference in the 2016 election. Paper ballot requirements, post-election audits, and cybersecurity assessments have all been strengthened, though disparities between well-resourced and under-resourced jurisdictions persist.

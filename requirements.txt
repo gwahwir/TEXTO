@@ -1,0 +1,5 @@
+flask>=3.0
+sentence-transformers>=2.7
+umap-learn>=0.5
+numpy>=1.26
+scikit-learn>=1.4

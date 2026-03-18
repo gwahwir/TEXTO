@@ -1,0 +1,15 @@
+[
+  {
+    "label": "Broadband competition",
+    "color": "#808000",
+    "active": true,
+    "filters": [
+      {
+        "query": "Broadband competition",
+        "threshold": 0.35,
+        "mode": "or",
+        "exact": false
+      }
+    ]
+  }
+]

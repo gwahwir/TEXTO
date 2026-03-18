@@ -1,0 +1,33 @@
+{
+  "maritime": [
+    "Ferry service investment",
+    "Inland waterway maintenance",
+    "Maritime shipping regulations",
+    "Ocean and marine conservation",
+    "Offshore wind job creation",
+    "Port infrastructure",
+    "Seaport expansion"
+  ],
+  "healthcare": [
+    "Child welfare and foster care",
+    "Community health center funding",
+    "Dental care access",
+    "Harm reduction policy",
+    "Hospital price transparency",
+    "Medical billing reform",
+    "Medicare expansion",
+    "Mental health care access",
+    "Vision care coverage"
+  ],
+  "military": [
+    "Civilian oversight of police",
+    "Drone warfare policy"
+  ],
+  "politics": [
+    "Campaign finance reform",
+    "Lobbying regulation"
+  ],
+  "aviation": [
+    "Universal basic income pilots"
+  ]
+}

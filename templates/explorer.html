@@ -1,0 +1,1267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Textonomy – Issue Explorer</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f4f5f8;--surface:#fff;--border:#e0e3ed;--muted:#cdd0df;
+  --text:#1a1d2e;--text-dim:#8890aa;
+  --live:#2d6a4f;--sel:#1e2030;
+  --accent:#3a6fff;--accent2:#e8365d;--radius:6px;
+  --mono:ui-monospace,'Cascadia Code','Fira Mono','Consolas',monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hidden;}
+#app{display:flex;flex-direction:column;height:100vh;}
+
+/* ── Header ── */
+#header{
+  display:flex;align-items:center;gap:10px;padding:10px 16px;flex-shrink:0;
+  border-bottom:1px solid var(--border);background:var(--surface);z-index:20;
+  box-shadow:0 1px 4px rgba(0,0,0,.06);
+}
+#body-row{display:flex;flex:1;min-height:0;overflow:hidden;}
+
+#logo{white-space:nowrap;flex-shrink:0;display:flex;align-items:baseline;gap:6px;}
+#logo-main{font-size:15px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);}
+#logo-sep{font-size:13px;color:var(--text-dim);font-weight:400;}
+#logo-sub{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text);}
+#nav-link{font-family:var(--mono);font-size:11px;color:var(--text-dim);text-decoration:none;
+  border:1px solid var(--border);border-radius:var(--radius);padding:4px 9px;
+  transition:border-color .15s,color .15s;white-space:nowrap;flex-shrink:0;}
+#nav-link:hover{border-color:var(--accent);color:var(--accent);}
+
+/* ── Search wrap ── */
+#search-wrap{display:flex;align-items:center;gap:8px;flex:1;min-width:0;}
+#query{
+  flex:1;min-width:0;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);
+  padding:8px 12px;font-family:var(--mono);font-size:13px;color:var(--text);outline:none;
+  transition:border-color .18s,box-shadow .18s;
+}
+#query::placeholder{color:var(--text-dim);}
+#query:focus{border-color:var(--live);box-shadow:0 0 0 3px rgba(45,106,79,.12);}
+
+#threshold-wrap{
+  display:flex;align-items:center;gap:7px;flex-shrink:0;
+  font-family:var(--mono);font-size:12px;color:var(--text-dim);white-space:nowrap;
+}
+#threshold{-webkit-appearance:none;width:90px;height:4px;background:var(--border);border-radius:2px;outline:none;cursor:pointer;}
+#threshold::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--live);cursor:pointer;}
+
+/* Exact label: padded so it doesn't feel cramped */
+#exact-wrap{
+  display:flex;align-items:center;gap:6px;
+  font-family:var(--mono);font-size:11px;color:var(--text-dim);
+  flex-shrink:0;white-space:nowrap;cursor:pointer;
+  padding:0 6px;
+}
+#exact-wrap input{cursor:pointer;accent-color:var(--accent);}
+
+/* Buttons */
+.hdr-btn{
+  padding:8px 13px;border-radius:var(--radius);font-family:var(--sans);font-size:12px;
+  font-weight:700;letter-spacing:.05em;cursor:pointer;
+  transition:background .18s,color .18s,transform .1s,border-color .18s;
+  white-space:nowrap;flex-shrink:0;text-transform:uppercase;
+}
+.hdr-btn:active{transform:scale(.97);}
+#search-btn{background:var(--live);border:none;color:#fff;}
+#search-btn:hover{background:#1e4d38;}
+#add-btn{background:transparent;border:1.5px solid var(--accent);color:var(--accent);}
+#add-btn:hover:not(:disabled){background:var(--accent);color:#fff;}
+#add-btn:disabled{opacity:.3;cursor:default;}
+#clear-btn{background:transparent;border:1.5px solid var(--border);color:var(--text-dim);}
+#clear-btn:hover{border-color:var(--accent2);color:var(--accent2);}
+#settings-btn{background:transparent;border:1.5px solid var(--border);color:var(--text-dim);}
+#settings-btn:hover{border-color:var(--accent);color:var(--accent);}
+#status{font-family:var(--mono);font-size:11px;color:var(--text-dim);white-space:nowrap;flex-shrink:0;}
+
+/* ── Settings dropdown ── */
+#settings-wrap{position:relative;flex-shrink:0;}
+#settings-menu{
+  display:none;position:absolute;top:calc(100% + 6px);right:0;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:14px 16px;min-width:300px;z-index:200;box-shadow:0 4px 18px rgba(0,0,0,.1);
+}
+#settings-menu.open{display:block;}
+.setting-section{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--text-dim);margin-bottom:10px;}
+.setting-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;}
+.setting-row:last-child{margin-bottom:0;}
+.setting-label{font-family:var(--mono);font-size:12px;color:var(--text-dim);}
+.setting-input{
+  width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;
+  padding:4px 8px;font-family:var(--mono);font-size:12px;color:var(--text);outline:none;text-align:right;
+  /* remove spinners */
+  -moz-appearance:textfield;
+}
+.setting-input::-webkit-inner-spin-button,.setting-input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
+.setting-input:focus{border-color:var(--accent);}
+.setting-select{background:var(--bg);border:1px solid var(--border);border-radius:4px;
+  padding:4px 8px;font-family:var(--mono);font-size:12px;color:var(--text);outline:none;cursor:pointer;}
+.setting-apply{
+  padding:4px 10px;border-radius:4px;background:var(--accent);border:none;
+  color:#fff;font-family:var(--sans);font-size:11px;font-weight:700;cursor:pointer;text-transform:uppercase;
+}
+.setting-apply:hover{background:#5580ff;}
+.setting-randomize{
+  padding:4px 10px;border-radius:4px;background:transparent;border:1px solid var(--border);
+  color:var(--text-dim);font-family:var(--sans);font-size:11px;cursor:pointer;text-transform:uppercase;
+}
+.setting-randomize:hover{border-color:var(--accent);color:var(--accent);}
+.setting-note{font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:8px;line-height:1.6;}
+.settings-divider{border:none;border-top:1px solid var(--border);margin:12px 0;}
+.setting-radio-group{display:flex;gap:10px;margin:4px 0 8px;}
+.setting-radio-group label{font-family:var(--mono);font-size:11px;color:var(--text-dim);cursor:pointer;display:flex;align-items:center;gap:4px;}
+.file-input-btn{padding:5px 10px;border-radius:4px;background:transparent;border:1px solid var(--border);
+  color:var(--text-dim);font-family:var(--mono);font-size:11px;cursor:pointer;white-space:nowrap;}
+.file-input-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+/* ── Resizable panels ── */
+#catpanel{
+  width:260px;min-width:140px;max-width:520px;flex-shrink:0;
+  border-right:1px solid var(--border);background:var(--surface);
+  display:flex;flex-direction:column;overflow:hidden;position:relative;
+}
+#sidebar{
+  width:400px;min-width:150px;max-width:700px;flex-shrink:0;
+  border-left:1px solid var(--border);background:var(--surface);
+  display:flex;flex-direction:column;overflow:hidden;position:relative;
+}
+.resize-handle{
+  position:absolute;top:0;bottom:0;width:5px;cursor:col-resize;z-index:30;
+  background:transparent;transition:background .15s;
+}
+.resize-handle:hover,.resize-handle.dragging{background:rgba(58,111,255,.18);}
+#catpanel .resize-handle{right:0;}
+#sidebar .resize-handle{left:0;}
+
+/* ── Cat panel ── */
+#catpanel-header{padding:10px 13px 8px;border-bottom:1px solid var(--border);flex-shrink:0;}
+#catpanel-toprow{display:flex;align-items:center;justify-content:space-between;gap:6px;}
+#catpanel-title{font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--text-dim);}
+.cat-toggle-all{
+  font-family:var(--mono);font-size:10px;color:var(--text-dim);border:1px solid var(--border);
+  border-radius:3px;padding:2px 7px;background:transparent;cursor:pointer;white-space:nowrap;
+  transition:border-color .12s,color .12s;
+}
+.cat-toggle-all:hover{border-color:var(--accent);color:var(--accent);}
+
+#cat-empty{padding:28px 15px;font-family:var(--mono);font-size:11px;color:var(--text-dim);text-align:center;line-height:2;}
+
+.cat-item{
+  display:flex;align-items:center;gap:7px;padding:6px 11px;cursor:pointer;user-select:none;
+  border-left:3px solid transparent;transition:background .12s,border-color .12s;
+}
+.cat-item:hover{background:var(--bg);}
+.cat-item.active{background:rgba(58,111,255,.04);}
+.cat-item.expanded{border-left-color:var(--accent);background:rgba(58,111,255,.04);}
+.cat-swatch{width:10px;height:10px;border-radius:50%;flex-shrink:0;transition:opacity .2s;}
+.cat-item:not(.active) .cat-swatch{opacity:.3;}
+
+/* Label: normally shows text, becomes input when editing */
+.cat-label{
+  flex:1;font-size:12px;font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  min-width:0;
+}
+.cat-item.active .cat-label{color:var(--text);}
+.cat-item:not(.active) .cat-label{color:var(--text-dim);}
+.cat-label-input{
+  flex:1;min-width:0;font-size:12px;font-family:var(--mono);color:var(--text);
+  background:var(--bg);border:1px solid var(--accent);border-radius:3px;
+  padding:1px 5px;outline:none;
+}
+
+.cat-count{font-size:10px;font-family:var(--mono);color:var(--text-dim);flex-shrink:0;}
+.cat-icon-btn{
+  width:16px;height:16px;display:flex;align-items:center;justify-content:center;
+  border-radius:3px;font-size:11px;color:var(--muted);cursor:pointer;flex-shrink:0;opacity:0;
+  transition:background .12s,color .12s,opacity .12s;line-height:1;
+}
+.cat-item:hover .cat-icon-btn,.cat-item.expanded .cat-icon-btn{opacity:1;}
+.cat-icon-btn:hover{background:rgba(58,111,255,.1);color:var(--accent);}
+.cat-del:hover{background:rgba(232,54,93,.1)!important;color:var(--accent2)!important;}
+
+/* ── Filter editor ── */
+.cat-editor{
+  background:rgba(58,111,255,.03);border-left:3px solid var(--accent);
+  border-bottom:1px solid var(--border);padding:8px 10px 10px 12px;display:none;
+}
+.cat-editor.open{display:block;}
+.editor-label{font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;}
+.filter-row{display:flex;align-items:center;gap:5px;margin-bottom:5px;}
+.filter-mode-sel{
+  font-family:var(--mono);font-size:10px;color:var(--text);background:var(--surface);
+  border:1px solid var(--border);border-radius:3px;padding:2px 3px;cursor:pointer;outline:none;flex-shrink:0;width:44px;
+}
+.filter-mode-sel:focus{border-color:var(--accent);}
+.filter-query-input{
+  flex:1;min-width:0;font-family:var(--mono);font-size:11px;color:var(--text);
+  background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:3px 6px;outline:none;
+}
+.filter-query-input:focus{border-color:var(--accent);}
+.filter-thresh-input{
+  width:42px;font-family:var(--mono);font-size:10px;color:var(--text);
+  background:var(--surface);border:1px solid var(--border);border-radius:3px;
+  padding:2px 4px;outline:none;text-align:center;flex-shrink:0;
+  /* no spinners */
+  -moz-appearance:textfield;
+}
+.filter-thresh-input::-webkit-inner-spin-button,.filter-thresh-input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
+.filter-thresh-input:focus{border-color:var(--accent);}
+.filter-exact-label{font-family:var(--mono);font-size:9px;color:var(--text-dim);cursor:pointer;white-space:nowrap;}
+.filter-exact-cb{cursor:pointer;accent-color:var(--accent);}
+.filter-rm-btn{
+  width:15px;height:15px;display:flex;align-items:center;justify-content:center;
+  font-size:13px;color:var(--muted);cursor:pointer;flex-shrink:0;border-radius:2px;
+  transition:color .1s,background .1s;
+}
+.filter-rm-btn:hover{color:var(--accent2);background:rgba(232,54,93,.08);}
+.add-filter-btn{
+  font-family:var(--mono);font-size:10px;color:var(--accent);cursor:pointer;
+  background:transparent;border:1px dashed rgba(58,111,255,.4);border-radius:3px;
+  padding:3px 8px;margin-top:2px;width:100%;text-align:left;transition:border-color .12s,background .12s;
+}
+.add-filter-btn:hover{border-color:var(--accent);background:rgba(58,111,255,.05);}
+.editor-actions{display:flex;gap:5px;margin-top:8px;}
+.editor-save-btn{
+  flex:1;padding:4px 0;border-radius:4px;background:var(--accent);border:none;
+  color:#fff;font-family:var(--sans);font-size:11px;font-weight:700;cursor:pointer;
+  text-transform:uppercase;transition:background .15s;
+}
+.editor-save-btn:hover{background:#5580ff;}
+.editor-cancel-btn{
+  padding:4px 10px;border-radius:4px;background:transparent;border:1px solid var(--border);
+  color:var(--text-dim);font-family:var(--sans);font-size:11px;cursor:pointer;text-transform:uppercase;
+}
+.editor-cancel-btn:hover{border-color:var(--accent2);color:var(--accent2);}
+
+/* ── Add-category bar (below search in catpanel) ── */
+#add-filters-panel{
+  display:none;border-top:1px solid var(--border);flex-shrink:0;
+  background:rgba(58,111,255,.02);border-left:3px solid var(--accent);
+  padding:8px 10px 10px 12px;
+}
+#add-filters-panel.open{display:block;}
+#add-filters-label{font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--accent);margin-bottom:6px;}
+
+/* ── Canvas ── */
+#canvas-wrap{flex:1;min-width:0;position:relative;overflow:hidden;background:var(--bg);cursor:crosshair;}
+#scatter-canvas{position:absolute;top:0;left:0;width:100%;height:100%;}
+#selection-box{position:absolute;border:1.5px dashed var(--sel);background:rgba(30,32,48,.05);
+  pointer-events:none;display:none;border-radius:2px;}
+#tooltip{position:absolute;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:8px 12px;font-family:var(--mono);font-size:12px;color:var(--text);
+  pointer-events:none;display:none;min-width:200px;max-width:320px;line-height:1.6;
+  box-shadow:0 4px 18px rgba(0,0,0,.1);z-index:100;}
+.score-badge{display:inline-block;margin-top:3px;margin-right:3px;padding:1px 6px;border-radius:3px;
+  font-size:10px;font-weight:500;background:var(--accent);color:#fff;}
+#map-controls{position:absolute;bottom:18px;left:18px;display:flex;flex-direction:column;gap:3px;z-index:10;}
+.map-btn{width:29px;height:29px;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);color:var(--text);font-size:15px;line-height:1;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 1px 4px rgba(0,0,0,.07);transition:border-color .15s,color .15s,background .15s;user-select:none;}
+.map-btn:hover{border-color:var(--accent);color:var(--accent);}
+.map-btn.active-pan{background:var(--accent);border-color:var(--accent);color:#fff;}
+#pan-hint{position:absolute;bottom:18px;right:18px;font-family:var(--mono);font-size:10px;
+  color:var(--text-dim);background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:4px 8px;opacity:.65;}
+
+/* ── Sidebar ── */
+#sidebar-header{padding:13px 15px 9px;border-bottom:1px solid var(--border);flex-shrink:0;}
+#sidebar-title{font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--text-dim);}
+#sidebar-count{margin-top:2px;font-family:var(--mono);font-size:13px;color:var(--text);}
+#sidebar-list{flex:1;overflow-y:auto;padding:6px 0;scrollbar-width:thin;scrollbar-color:var(--border) transparent;}
+#sidebar-list::-webkit-scrollbar{width:3px;}
+#sidebar-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+.sb-section{padding:10px 15px 4px;font-size:9px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);}
+.sidebar-item{padding:5px 8px 5px 15px;font-family:var(--mono);font-size:12px;color:var(--text-dim);
+  border-left:2px solid transparent;display:flex;align-items:flex-start;gap:6px;
+  transition:background .1s,color .1s;cursor:default;line-height:1.5;}
+.sidebar-item:hover{background:var(--bg);color:var(--text);}
+.sidebar-item.above{color:var(--text);border-left-color:var(--live);}
+.sidebar-item .sim{flex-shrink:0;font-size:10px;padding:1px 5px;border-radius:3px;
+  background:var(--bg);color:var(--text-dim);border:1px solid var(--border);margin-top:2px;}
+.sidebar-item.above .sim{background:rgba(45,106,79,.08);color:var(--live);border-color:rgba(45,106,79,.2);cursor:pointer;}
+.set-thresh{flex-shrink:0;margin-top:2px;font-size:10px;padding:1px 5px;border-radius:3px;
+  background:rgba(58,111,255,.08);color:var(--accent);border:1px solid rgba(58,111,255,.18);
+  cursor:pointer;display:none;white-space:nowrap;}
+.sidebar-item:hover .set-thresh{display:inline-block;}
+.set-thresh:hover{background:var(--accent);color:#fff;}
+#sidebar-empty{padding:32px 15px;font-family:var(--mono);font-size:12px;color:var(--text-dim);text-align:center;line-height:2;}
+
+/* Cluster panel */
+#cluster-panel{flex-shrink:0;overflow:hidden;display:flex;flex-direction:column;}
+#cluster-body{display:none;flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent;}
+#cluster-body.open{display:flex;flex-direction:column;}
+#cluster-results{overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent;}
+#cluster-results::-webkit-scrollbar{width:3px;}
+#cluster-results::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+
+/* Vertical resize handle between cat-list and cluster panel */
+#cat-cluster-divider{
+  flex-shrink:0;height:5px;cursor:row-resize;background:transparent;
+  border-top:1px solid var(--border);border-bottom:1px solid var(--border);
+  transition:background .15s;position:relative;z-index:10;
+}
+#cat-cluster-divider:hover,#cat-cluster-divider.dragging{background:rgba(58,111,255,.18);}
+#cat-list{overflow-y:auto;padding:4px 0;scrollbar-width:thin;scrollbar-color:var(--border) transparent;}
+
+/* Loading */
+#loading{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;z-index:9999;gap:16px;transition:opacity .4s;}
+#loading.hidden{opacity:0;pointer-events:none;}
+#loading-text{font-family:var(--mono);font-size:13px;color:var(--text-dim);}
+.spinner{width:30px;height:30px;border:2px solid var(--border);border-top-color:var(--live);
+  border-radius:50%;animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+</style>
+</head>
+<body>
+<div id="loading"><div class="spinner"></div><div id="loading-text">Loading issue map…</div></div>
+<div id="app">
+  <header id="header">
+    <div id="logo">
+      <span id="logo-main">Textonomy</span>
+      <span id="logo-sep">–</span>
+      <span id="logo-sub">Issue Explorer</span>
+    </div>
+    <a href="/reports" id="nav-link">→ Reports</a>
+    <div id="search-wrap">
+      <input id="query" type="text" placeholder='Search, e.g. "education funding" or "climate policy"…' autocomplete="off"/>
+      <div id="threshold-wrap">
+        <span>Threshold</span>
+        <input id="threshold" type="range" min="0" max="1" step="0.01" value="0.45"/>
+        <span id="threshold-val">0.45</span>
+      </div>
+      <label id="exact-wrap" title="Exact substring match instead of semantic similarity">
+        <input type="checkbox" id="exact-cb"/> Exact
+      </label>
+      <button class="hdr-btn" id="search-btn">Search</button>
+      <button class="hdr-btn" id="add-btn" disabled>＋ Add</button>
+      <button class="hdr-btn" id="clear-btn">Clear</button>
+      <div id="settings-wrap">
+        <button class="hdr-btn" id="settings-btn">⚙ Settings</button>
+        <div id="settings-menu">
+          <div class="setting-section">Display</div>
+          <div class="setting-row">
+            <span class="setting-label">Issues shown</span>
+            <input class="setting-input" id="setting-max-display" type="number" min="100" max="5000" value="1000"/>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">Sample seed</span>
+            <input class="setting-input" id="setting-seed" type="number" min="0" value="42"/>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">Embedding model</span>
+            <select class="setting-select" id="setting-model"></select>
+          </div>
+          <div class="setting-row">
+            <span></span>
+            <div style="display:flex;gap:6px;">
+              <button class="setting-randomize" id="settings-randomize">🎲 Resample</button>
+              <button class="setting-apply" id="settings-apply">Apply</button>
+            </div>
+          </div>
+          <div class="setting-note">Resample picks a new random subset.<br>Apply saves max/model changes.</div>
+          <hr class="settings-divider"/>
+          <div class="setting-section">Import / Export Categories</div>
+          <label style="font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-bottom:4px;display:block;">Import from JSON</label>
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
+            <input type="file" id="import-file-input" accept=".json" style="display:none"/>
+            <button class="file-input-btn" onclick="document.getElementById('import-file-input').click()">Choose file…</button>
+            <span id="import-file-name" style="font-family:var(--mono);font-size:10px;color:var(--text-dim);">No file</span>
+          </div>
+          <div class="setting-radio-group">
+            <label><input type="radio" name="import-mode" value="replace" checked> Replace all</label>
+            <label><input type="radio" name="import-mode" value="add"> Merge</label>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <span style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">Prefix:</span>
+            <input type="text" id="import-prefix" placeholder="e.g. shared/" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:4px 8px;font-family:var(--mono);font-size:11px;color:var(--text);outline:none;"/>
+          </div>
+          <button class="setting-apply" id="import-apply-btn" style="width:100%;margin-bottom:6px;">Import</button>
+          <button class="file-input-btn" id="export-btn" style="width:100%;">⬇ Download categories.json</button>
+        </div>
+      </div>
+    </div>
+    <div id="status">— issues</div>
+  </header>
+
+  <div id="body-row">
+    <aside id="catpanel">
+      <div class="resize-handle" id="cat-resize"></div>
+      <div id="catpanel-header">
+        <div id="catpanel-toprow">
+          <div id="catpanel-title">Categories</div>
+          <div style="display:flex;gap:4px;">
+            <button class="cat-toggle-all" id="cat-all">All</button>
+            <button class="cat-toggle-all" id="cat-none">None</button>
+          </div>
+        </div>
+      </div>
+      <!-- Add-filters panel: shows pre-save filter builder when + Add is clicked -->
+      <div id="add-filters-panel">
+        <div id="add-filters-toprow" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <div id="add-filters-label">New Category Filters</div>
+          <label style="display:flex;align-items:center;gap:4px;cursor:pointer;flex-shrink:0;">
+            <span style="font-family:var(--mono);font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.1em;">Color</span>
+            <input type="color" id="add-cat-color" value="#6baed6" style="width:22px;height:22px;padding:1px;border:1px solid var(--border);border-radius:3px;cursor:pointer;background:none;"/>
+          </label>
+        </div>
+        <div id="add-filter-rows-wrap"></div>
+        <button class="add-filter-btn" id="add-filter-add-row">＋ add filter</button>
+        <div style="display:flex;gap:5px;margin-top:8px;">
+          <button id="panel-search-btn" style="flex:1;padding:4px 0;border-radius:4px;background:var(--live);border:none;color:#fff;font-family:var(--sans);font-size:10px;font-weight:700;cursor:pointer;text-transform:uppercase;">Search</button>
+          <button id="panel-add-btn" disabled style="flex:1;padding:4px 0;border-radius:4px;background:transparent;border:1.5px solid var(--accent);color:var(--accent);font-family:var(--sans);font-size:10px;font-weight:700;cursor:pointer;text-transform:uppercase;opacity:.35;">＋ Add</button>
+        </div>
+      </div>
+      <div id="cat-list">
+        <div id="cat-empty">No categories yet.<br>Search and press + Add<br>to save one.</div>
+      </div>
+      <div id="cat-cluster-divider" title="Drag to resize"></div>
+      <!-- Clustering panel -->
+      <div id="cluster-panel" style="border-top:2px solid var(--border);background:var(--bg);">
+        <div id="cluster-header" style="display:flex;align-items:center;justify-content:space-between;padding:8px 13px;cursor:pointer;user-select:none;" onclick="toggleCluster()">
+          <span style="font-size:9px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--text-dim);">Auto-Cluster</span>
+          <span id="cluster-arrow" style="font-size:11px;color:var(--text-dim);">▸</span>
+        </div>
+        <div id="cluster-body" style="padding:0 13px 12px;">
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <!-- Algorithm selector -->
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+              <span class="setting-label">Algorithm</span>
+              <select id="cluster-algo" style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-family:var(--mono);font-size:11px;color:var(--text);outline:none;cursor:pointer;">
+                <option value="hdbscan">HDBSCAN</option>
+                <option value="agglom">Agglomerative</option>
+                <option value="kmeans">KMeans</option>
+              </select>
+            </div>
+            <!-- HDBSCAN params -->
+            <div id="params-hdbscan" style="display:flex;flex-direction:column;gap:6px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                <span class="setting-label" title="Min cluster size: smaller = more, finer clusters">Min cluster size</span>
+                <input id="hdbscan-min-cluster-size" type="text" inputmode="decimal" value="15" style="width:50px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-family:var(--mono);font-size:12px;color:var(--text);outline:none;text-align:right;-moz-appearance:textfield;" />
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                <span class="setting-label" title="Min samples: higher = more conservative, fewer clusters">Min samples</span>
+                <input id="hdbscan-min-samples" type="text" inputmode="decimal" value="5" style="width:50px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-family:var(--mono);font-size:12px;color:var(--text);outline:none;text-align:right;-moz-appearance:textfield;" />
+              </div>
+            </div>
+            <!-- Agglom params -->
+            <div id="params-agglom" style="display:none;flex-direction:column;gap:6px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                <span class="setting-label" title="Number of clusters to find">Clusters (K)</span>
+                <input id="agglom-k" type="text" inputmode="decimal" value="10" style="width:50px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-family:var(--mono);font-size:12px;color:var(--text);outline:none;text-align:right;-moz-appearance:textfield;" />
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                <span class="setting-label" title="Linkage: ward minimises within-cluster variance; average and complete use pairwise distances">Linkage</span>
+                <select id="agglom-linkage" style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-family:var(--mono);font-size:11px;color:var(--text);outline:none;cursor:pointer;">
+                  <option value="average">average</option>
+                  <option value="complete">complete</option>
+                </select>
+              </div>
+            </div>
+            <!-- KMeans params -->
+            <div id="params-kmeans" style="display:none;flex-direction:column;gap:6px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                <span class="setting-label" title="Number of clusters to find">Clusters (K)</span>
+                <input id="kmeans-k" type="text" inputmode="decimal" value="10" style="width:50px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-family:var(--mono);font-size:12px;color:var(--text);outline:none;text-align:right;-moz-appearance:textfield;" />
+              </div>
+            </div>
+            <button id="cluster-run-btn" style="width:100%;padding:5px 0;border-radius:4px;background:var(--accent);border:none;color:#fff;font-family:var(--sans);font-size:11px;font-weight:700;cursor:pointer;text-transform:uppercase;">Run Clustering</button>
+            <div id="cluster-status" style="font-family:var(--mono);font-size:10px;color:var(--text-dim);min-height:14px;"></div>
+            <div id="cluster-results"></div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <div id="canvas-wrap">
+      <canvas id="scatter-canvas"></canvas>
+      <div id="selection-box"></div>
+      <div id="tooltip"></div>
+      <div id="map-controls">
+        <button class="map-btn" id="zoom-in" title="Zoom in">+</button>
+        <button class="map-btn" id="zoom-out" title="Zoom out">−</button>
+        <button class="map-btn" id="zoom-reset" title="Reset view" style="font-size:11px;">⌖</button>
+        <button class="map-btn" id="pan-toggle" title="Toggle pan mode (or hold Space)">✥</button>
+        <button class="map-btn" id="labels-toggle" title="Toggle issue labels on map" style="font-size:10px;font-weight:700;font-family:var(--mono);">Aa</button>
+      </div>
+      <div id="pan-hint">Space/Ctrl+drag or ✥ to pan · scroll to zoom</div>
+    </div>
+
+    <aside id="sidebar">
+      <div class="resize-handle" id="side-resize"></div>
+      <div id="sidebar-header">
+        <div id="sidebar-title">Issues</div>
+        <div id="sidebar-count">—</div>
+      </div>
+      <div id="sidebar-list">
+        <div id="sidebar-empty">Drag to select a region<br>or search above<br>to see issues here.</div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────────────────────
+const PADDING = 55, DOT_R = 2.8, BELOW_N = 8, HIT_R = 18;
+const C_LIVE = "#2d6a4f", C_SEL = "#1e2030";
+const C_BASE_ON = "rgba(155,162,185,.40)", C_BASE_OF = "rgba(130,138,170,.65)";
+
+// Perceptually distinct colour palette (36 colours, none too similar)
+const CAT_COLORS = [
+  "#e6194b","#3cb44b","#4363d8","#f58231","#911eb4",
+  "#42d4f4","#f032e6","#bfef45","#fabed4","#469990",
+  "#dcbeff","#9a6324","#fffac8","#800000","#aaffc3",
+  "#808000","#ffd8b1","#000075","#a9a9a9","#ffffff",
+  "#e6beff","#4db3ff","#ff8c69","#75bda7","#c97a2a",
+  "#6b5b95","#feb236","#d64161","#88b04b","#009b77",
+  "#dd4132","#9b2335","#45b8ac","#bc243c","#c4aead","#5b5ea6",
+];
+
+// Pick a color that's visually distinct from all existing ones
+function nextCatColor(){
+  if(!categories.length) return CAT_COLORS[0];
+  const used = categories.map(c => hexToHsl(c.color));
+  // Try each palette color, pick one that maximizes min hue distance
+  let bestColor = CAT_COLORS[0], bestDist = -1;
+  for(const hex of CAT_COLORS){
+    const hsl = hexToHsl(hex);
+    const minDist = Math.min(...used.map(u => Math.min(
+      Math.abs(hsl[0] - u[0]), 360 - Math.abs(hsl[0] - u[0])
+    )));
+    if(minDist > bestDist){ bestDist = minDist; bestColor = hex; }
+  }
+  // If all palette used, generate from HSL with even spacing
+  if(bestDist < 15){
+    const h = (categories.length * 97) % 360;
+    return `hsl(${h},60%,50%)`;
+  }
+  return bestColor;
+}
+function hexToHsl(hex){
+  let r=0,g=0,b=0;
+  if(hex.length===7){r=parseInt(hex.slice(1,3),16)/255;g=parseInt(hex.slice(3,5),16)/255;b=parseInt(hex.slice(5,7),16)/255;}
+  const max=Math.max(r,g,b), min=Math.min(r,g,b);
+  let h=0,s=0,l=(max+min)/2;
+  if(max!==min){const d=max-min;s=l>.5?d/(2-max-min):d/(max+min);switch(max){case r:h=((g-b)/d+(g<b?6:0))/6;break;case g:h=((b-r)/d+2)/6;break;case b:h=((r-g)/d+4)/6;break;}}
+  return [h*360,s*100,l*100];
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let points=[], scores={}, allScores={}, selected=new Set();
+let categories=[], activeSearch=null;
+let view={ox:0,oy:0,scale:1};
+let drag=null, panStart=null, spaceDown=false, ctrlDown=false, panMode=false, hovered=null;
+let expandedCatIdx = -1;
+let importFileData = null;
+let pendingFilters = [];
+let showLabels = false;  // show issue text beside dots
+
+// ── DOM ───────────────────────────────────────────────────────────────────────
+const canvas    = document.getElementById("scatter-canvas");
+const ctx       = canvas.getContext("2d");
+const tooltip   = document.getElementById("tooltip");
+const selBox    = document.getElementById("selection-box");
+const sidebarList = document.getElementById("sidebar-list");
+const sidebarCnt  = document.getElementById("sidebar-count");
+const statusEl  = document.getElementById("status");
+const threshEl  = document.getElementById("threshold");
+const threshVal = document.getElementById("threshold-val");
+const queryEl   = document.getElementById("query");
+const exactCb   = document.getElementById("exact-cb");
+const loadingEl = document.getElementById("loading");
+const addBtn    = document.getElementById("add-btn");
+const catListEl = document.getElementById("cat-list");
+const panToggle = document.getElementById("pan-toggle");
+const canvasWrap= document.getElementById("canvas-wrap");
+const addFiltersPanel = document.getElementById("add-filters-panel");
+const addFilterRowsWrap = document.getElementById("add-filter-rows-wrap");
+
+// ── Coord helpers ─────────────────────────────────────────────────────────────
+function W(){return canvas.width/(window.devicePixelRatio||1);}
+function H(){return canvas.height/(window.devicePixelRatio||1);}
+function toScreen(nx,ny){
+  const aw=W()-PADDING*2, ah=H()-PADDING*2;
+  const sx=PADDING+nx*aw, sy=PADDING+(1-ny)*ah;
+  return [(sx-view.ox)*view.scale+W()/2,(sy-view.oy)*view.scale+H()/2];
+}
+function resize(){
+  const dpr=window.devicePixelRatio||1, w=canvasWrap.clientWidth, h=canvasWrap.clientHeight;
+  canvas.width=w*dpr; canvas.height=h*dpr;
+  canvas.style.width=w+"px"; canvas.style.height=h+"px";
+  ctx.setTransform(dpr,0,0,dpr,0,0); draw();
+}
+new ResizeObserver(resize).observe(canvasWrap);
+
+// ── Draw ──────────────────────────────────────────────────────────────────────
+function draw(){
+  const W_=W(), H_=H();
+  ctx.clearRect(0,0,W_,H_);
+  ctx.strokeStyle="rgba(160,168,200,.18)"; ctx.lineWidth=.5;
+  for(let x=0;x<W_;x+=80){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H_);ctx.stroke();}
+  for(let y=0;y<H_;y+=80){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W_,y);ctx.stroke();}
+  const activeCats=categories.filter(c=>c.active);
+  const hasLive=Object.keys(scores).length>0;
+  const anythingOn=hasLive||activeCats.length>0;
+  const catColMap={};
+  for(const cat of activeCats) for(const id of Object.keys(cat.scores)) catColMap[+id]=cat.color;
+  for(const pass of [0,1]){
+    for(const p of points){
+      const [sx,sy]=toScreen(p.x,p.y);
+      if(sx<-12||sy<-12||sx>W_+12||sy>H_+12) continue;
+      const isSel=selected.has(p.id), lScore=scores[p.id]??0;
+      const isLive=hasLive&&lScore>0, isCat=!!catColMap[p.id], isHov=hovered&&hovered.id===p.id;
+      const isHilit=isSel||isLive||isCat||isHov;
+      if(pass===0&&isHilit) continue;
+      if(pass===1&&!isHilit) continue;
+      if(pass===0){ctx.beginPath();ctx.arc(sx,sy,DOT_R,0,Math.PI*2);ctx.fillStyle=anythingOn?C_BASE_ON:C_BASE_OF;ctx.fill();continue;}
+      let col, r=DOT_R+0.5;
+      if(isSel){col=C_SEL;r=DOT_R+0.8;}
+      else if(isHov){col="#1a1d2e";r=DOT_R+1.0;}
+      else if(isLive){col=C_LIVE;r=DOT_R+0.7;}
+      else if(isCat){col=catColMap[p.id];}
+      const glowR=r*2.2;
+      const grd=ctx.createRadialGradient(sx,sy,0,sx,sy,glowR);
+      grd.addColorStop(0,col+"30");grd.addColorStop(1,col+"00");
+      ctx.beginPath();ctx.arc(sx,sy,glowR,0,Math.PI*2);ctx.fillStyle=grd;ctx.fill();
+      ctx.beginPath();ctx.arc(sx,sy,r,0,Math.PI*2);ctx.fillStyle=col;ctx.fill();
+    }
+  }
+  // ── Labels overlay ────────────────────────────────────────────────────────
+  if(showLabels && view.scale >= 0.8){
+    const fontSize = Math.max(8, Math.min(11, 9 * view.scale));
+    ctx.font = `${fontSize}px ${getComputedStyle(document.documentElement).getPropertyValue("--mono") || "monospace"}`;
+    ctx.textBaseline = "middle";
+    const activeCatIds = new Set();
+    for(const cat of categories.filter(c=>c.active)) for(const id of Object.keys(cat.scores)) activeCatIds.add(+id);
+    for(const p of points){
+      const [sx,sy] = toScreen(p.x,p.y);
+      if(sx<-50||sy<-20||sx>W_+50||sy>H_+20) continue;
+      const isActive = scores[p.id]>0 || activeCatIds.has(p.id) || selected.has(p.id);
+      if(!isActive && view.scale < 2.5) continue; // only show inactive labels when zoomed in
+      const txt = p.text.length > 28 ? p.text.slice(0,26)+"…" : p.text;
+      const alpha = isActive ? 0.85 : 0.38;
+      ctx.fillStyle = `rgba(26,29,46,${alpha})`;
+      // White halo
+      ctx.save();
+      ctx.shadowColor = "rgba(255,255,255,0.95)";
+      ctx.shadowBlur = 3;
+      ctx.fillText(txt, sx + DOT_R + 4, sy);
+      ctx.restore();
+    }
+  }
+}
+
+// ── Hit test / tooltip ────────────────────────────────────────────────────────
+function hitTest(cx,cy){let best=null,bestD=Infinity;for(const p of points){const [sx,sy]=toScreen(p.x,p.y);const d=Math.hypot(cx-sx,cy-sy);if(d<HIT_R&&d<bestD){best=p;bestD=d;}}return best;}
+function showTooltip(p,cx,cy){
+  let html=`<div style="font-weight:500;margin-bottom:4px">${p.text}</div>`;
+  const ls=scores[p.id];
+  if(ls!=null) html+=`<span class="score-badge" style="background:var(--live)">sim ${ls.toFixed(3)}</span>`;
+  const myCats=categories.filter(c=>c.scores[p.id]!=null);
+  for(const c of myCats) html+=`<span class="score-badge" style="background:${c.color}">${c.label} ${c.scores[p.id].toFixed(2)}</span>`;
+  tooltip.innerHTML=html;tooltip.style.display="block";
+  const tw=tooltip.offsetWidth,th=tooltip.offsetHeight;
+  let tx=cx+16,ty=cy-12;
+  if(tx+tw>canvasWrap.clientWidth)tx=cx-tw-16;
+  if(ty+th>canvasWrap.clientHeight)ty=cy-th-6;
+  tooltip.style.left=tx+"px";tooltip.style.top=ty+"px";
+}
+function hideTooltip(){tooltip.style.display="none";}
+
+// ── Pan ───────────────────────────────────────────────────────────────────────
+function isPanning(){return panMode||spaceDown||ctrlDown;}
+panToggle.addEventListener("click",()=>{panMode=!panMode;panToggle.classList.toggle("active-pan",panMode);canvas.style.cursor=panMode?"grab":"crosshair";});
+document.getElementById("labels-toggle").addEventListener("click",()=>{
+  showLabels=!showLabels;
+  document.getElementById("labels-toggle").classList.toggle("active-pan",showLabels);
+  draw();
+});
+document.addEventListener("keydown",e=>{if(e.code==="Space"&&document.activeElement!==queryEl){e.preventDefault();spaceDown=true;canvas.style.cursor="grab";}if(e.key==="Control"){ctrlDown=true;canvas.style.cursor="grab";}});
+document.addEventListener("keyup",e=>{if(e.code==="Space"){spaceDown=false;canvas.style.cursor=isPanning()?"grab":"crosshair";}if(e.key==="Control"){ctrlDown=false;canvas.style.cursor=isPanning()?"grab":"crosshair";}});
+
+// ── Mouse ─────────────────────────────────────────────────────────────────────
+canvas.addEventListener("mousemove",e=>{
+  const r=canvas.getBoundingClientRect(),cx=e.clientX-r.left,cy=e.clientY-r.top;
+  if(panStart){if(e.buttons===1){view.ox-=(cx-panStart.x)/view.scale;view.oy-=(cy-panStart.y)/view.scale;panStart={x:cx,y:cy};draw();return;}else panStart=null;}
+  if(drag&&drag.active){drag.ex=cx;drag.ey=cy;updateSelBox();return;}
+  const p=hitTest(cx,cy);
+  if(p!==hovered){hovered=p;if(!isPanning()&&!panStart)canvas.style.cursor=p?"pointer":"crosshair";if(p)showTooltip(p,cx,cy);else hideTooltip();draw();}
+  else if(p)showTooltip(p,cx,cy);
+});
+canvas.addEventListener("mousedown",e=>{
+  const r=canvas.getBoundingClientRect(),cx=e.clientX-r.left,cy=e.clientY-r.top;
+  if(isPanning()||e.button===1){panStart={x:cx,y:cy};canvas.style.cursor="grabbing";return;}
+  if(e.button!==0)return;
+  drag={sx:cx,sy:cy,ex:cx,ey:cy,active:false};
+});
+canvas.addEventListener("mousemove",e=>{
+  if(!drag||panStart)return;
+  const r=canvas.getBoundingClientRect(),cx=e.clientX-r.left,cy=e.clientY-r.top;
+  if(Math.abs(cx-drag.sx)>4||Math.abs(cy-drag.sy)>4)drag.active=true;
+  drag.ex=cx;drag.ey=cy;updateSelBox();
+},{passive:true});
+canvas.addEventListener("mouseup",e=>{
+  if(panStart){panStart=null;canvas.style.cursor=isPanning()?"grab":"crosshair";return;}
+  if(!drag)return;
+  if(drag.active)finishSelection();
+  else{const r=canvas.getBoundingClientRect(),p=hitTest(e.clientX-r.left,e.clientY-r.top);if(p){if(selected.has(p.id))selected.delete(p.id);else selected.add(p.id);}else selected.clear();updateSidebar();draw();}
+  drag=null;selBox.style.display="none";
+});
+canvas.addEventListener("mouseleave",()=>{hideTooltip();hovered=null;if(drag&&!drag.active){drag=null;selBox.style.display="none";}draw();});
+
+// ── Lasso / Zoom ──────────────────────────────────────────────────────────────
+function updateSelBox(){if(!drag)return;selBox.style.display="block";selBox.style.left=Math.min(drag.sx,drag.ex)+"px";selBox.style.top=Math.min(drag.sy,drag.ey)+"px";selBox.style.width=Math.abs(drag.ex-drag.sx)+"px";selBox.style.height=Math.abs(drag.ey-drag.sy)+"px";}
+function finishSelection(){const x1=Math.min(drag.sx,drag.ex),x2=Math.max(drag.sx,drag.ex),y1=Math.min(drag.sy,drag.ey),y2=Math.max(drag.sy,drag.ey);selected.clear();for(const p of points){const [sx,sy]=toScreen(p.x,p.y);if(sx>=x1&&sx<=x2&&sy>=y1&&sy<=y2)selected.add(p.id);}updateSidebar();draw();}
+canvas.addEventListener("wheel",e=>{e.preventDefault();const r=canvas.getBoundingClientRect(),cx=e.clientX-r.left,cy=e.clientY-r.top;const f=e.deltaY<0?1.12:1/1.12;view.ox+=(cx-W()/2)/view.scale;view.oy+=(cy-H()/2)/view.scale;view.scale=Math.min(20,Math.max(.2,view.scale*f));view.ox-=(cx-W()/2)/view.scale;view.oy-=(cy-H()/2)/view.scale;draw();},{passive:false});
+document.getElementById("zoom-in").onclick=()=>{view.scale=Math.min(20,view.scale*1.3);draw();};
+document.getElementById("zoom-out").onclick=()=>{view.scale=Math.max(.2,view.scale/1.3);draw();};
+document.getElementById("zoom-reset").onclick=()=>{view.ox=0;view.oy=0;view.scale=1;draw();};
+
+// ── Resizable panels ──────────────────────────────────────────────────────────
+function makeResizable(panelId,handleId,side){
+  const panel=document.getElementById(panelId),handle=document.getElementById(handleId);
+  handle.addEventListener("mousedown",e=>{
+    e.preventDefault();const startX=e.clientX,startW=panel.offsetWidth;
+    handle.classList.add("dragging");
+    const onMove=e2=>{const dx=e2.clientX-startX,newW=side==="right"?startW+dx:startW-dx;panel.style.width=Math.max(140,Math.min(700,newW))+"px";};
+    const onUp=()=>{handle.classList.remove("dragging");document.removeEventListener("mousemove",onMove);document.removeEventListener("mouseup",onUp);};
+    document.addEventListener("mousemove",onMove);document.addEventListener("mouseup",onUp);
+  });
+}
+makeResizable("catpanel","cat-resize","right");
+makeResizable("sidebar","side-resize","left");
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+const settingsBtn  = document.getElementById("settings-btn");
+const settingsMenu = document.getElementById("settings-menu");
+settingsBtn.addEventListener("click",e=>{e.stopPropagation();settingsMenu.classList.toggle("open");});
+document.addEventListener("click",()=>settingsMenu.classList.remove("open"));
+settingsMenu.addEventListener("click",e=>e.stopPropagation());
+
+document.getElementById("settings-apply").addEventListener("click",async()=>{
+  const val=parseInt(document.getElementById("setting-max-display").value)||1000;
+  const seed=parseInt(document.getElementById("setting-seed").value)||42;
+  const model=document.getElementById("setting-model").value;
+  statusEl.textContent="Applying…";
+  const res=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({max_display:val,display_seed:seed,active_model:model})});
+  if((await res.json()).ok){settingsMenu.classList.remove("open");statusEl.textContent="Reloading…";const ptData=await fetch("/api/points").then(r=>r.json());points=ptData;scores={};allScores={};selected.clear();statusEl.textContent=`${points.length} issues`;updateSidebar();draw();}
+});
+document.getElementById("settings-randomize").addEventListener("click",async()=>{
+  statusEl.textContent="Resampling…";
+  const res=await fetch("/api/settings/randomize",{method:"POST"}).then(r=>r.json());
+  if(res.ok){document.getElementById("setting-seed").value=res.seed;settingsMenu.classList.remove("open");const ptData=await fetch("/api/points").then(r=>r.json());points=ptData;scores={};allScores={};selected.clear();statusEl.textContent=`${points.length} issues`;updateSidebar();draw();}
+});
+
+// Import/Export in settings
+document.getElementById("import-file-input").addEventListener("change",e=>{
+  const file=e.target.files[0];if(!file)return;
+  document.getElementById("import-file-name").textContent=file.name;
+  const reader=new FileReader();
+  reader.onload=ev=>{try{importFileData=JSON.parse(ev.target.result);}catch{alert("Invalid JSON.");importFileData=null;}};
+  reader.readAsText(file);
+});
+document.getElementById("import-apply-btn").addEventListener("click",async()=>{
+  if(!importFileData){alert("Select a JSON file first.");return;}
+  const mode=document.querySelector('input[name="import-mode"]:checked').value;
+  const prefix=document.getElementById("import-prefix").value.trim();
+  const res=await fetch("/api/categories/import",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({categories:importFileData,mode,prefix})});
+  const d=await res.json();
+  if(d.ok){alert(`Imported ${d.count} categories.`);settingsMenu.classList.remove("open");const catData=await fetch("/api/categories").then(r=>r.json());categories=catData;renderCatPanel();draw();}
+});
+document.getElementById("export-btn").addEventListener("click",async()=>{
+  const data=await fetch("/api/categories/export").then(r=>r.json());
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));a.download="categories.json";a.click();
+});
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+function updateSidebar(){
+  const hasLive=Object.keys(scores).length>0;
+  const aboveItems=Object.entries(scores).map(([id,score])=>({p:points[+id],score})).sort((a,b)=>b.score-a.score);
+  const aboveIds=new Set(aboveItems.map(i=>i.p.id));
+  const belowItems=hasLive?Object.entries(allScores).filter(([id,score])=>!aboveIds.has(+id)&&score>0).sort((a,b)=>b[1]-a[1]).slice(0,BELOW_N).map(([id,score])=>({p:points[+id],score})):[];
+  const selExtra=[...selected].filter(id=>!aboveIds.has(id)&&!belowItems.find(i=>i.p.id===id));
+  sidebarCnt.textContent=`${aboveItems.length} match${aboveItems.length!==1?"es":""}${selected.size?` · ${selected.size} sel`:""}`;
+  if(!aboveItems.length&&!belowItems.length&&!selExtra.length){sidebarList.innerHTML=`<div id="sidebar-empty">Drag to select a region<br>or search above<br>to see issues here.</div>`;return;}
+  let html="";
+  if(aboveItems.length){
+    html+=`<div class="sb-section">Matches (above threshold)</div>`;
+    html+=aboveItems.map(({p,score})=>{const nt=Math.max(0,score-0.01).toFixed(2);return`<div class="sidebar-item above" data-id="${p.id}"><span class="sim" data-thresh="${nt}">${score.toFixed(2)}</span><span>${p.text}</span><span class="set-thresh" data-thresh="${nt}">↓${nt}</span></div>`;}).join("");
+  }
+  if(belowItems.length){
+    html+=`<div class="sb-section">Near matches</div>`;
+    html+=belowItems.map(({p,score})=>{const nt=Math.max(0,score-0.01).toFixed(2);return`<div class="sidebar-item" data-id="${p.id}"><span class="sim">${score.toFixed(2)}</span><span>${p.text}</span><span class="set-thresh" data-thresh="${nt}">↓${nt}</span></div>`;}).join("");
+  }
+  if(selExtra.length){html+=`<div class="sb-section">Selected</div>`;html+=selExtra.map(id=>`<div class="sidebar-item" data-id="${id}"><span class="sim">sel</span><span>${points[id].text}</span></div>`).join("");}
+  sidebarList.innerHTML=html;
+  sidebarList.querySelectorAll(".sidebar-item").forEach(el=>{el.addEventListener("mouseenter",()=>{hovered=points[+el.dataset.id];draw();});el.addEventListener("mouseleave",()=>{hovered=null;draw();});});
+  sidebarList.querySelectorAll("[data-thresh]").forEach(el=>{el.addEventListener("click",e=>{e.stopPropagation();const t=+el.dataset.thresh;threshEl.value=t;threshVal.textContent=t.toFixed(2);doSearch();});});
+}
+
+// ── Category panel ────────────────────────────────────────────────────────────
+function selectCategoryDots(cat){selected.clear();for(const id of Object.keys(cat.scores))selected.add(+id);updateSidebar();draw();}
+
+// ── Filter row builder (shared between editor and add panel) ──────────────────
+function buildFilterRowHTML(f, fi, removable) {
+  const modeOpts = ["or","and","not"].map(m=>`<option value="${m}"${f.mode===m?" selected":""}>${m.toUpperCase()}</option>`).join("");
+  const threshDisabled = f.exact ? "disabled style='opacity:.4'" : "";
+  return `<div class="filter-row" data-fi="${fi}">
+    <select class="filter-mode-sel" data-fi="${fi}">${modeOpts}</select>
+    <input class="filter-query-input" data-fi="${fi}" type="text" value="${(f.query||"").replace(/"/g,"&quot;")}" placeholder="query text…"/>
+    <input class="filter-thresh-input" data-fi="${fi}" type="text" inputmode="decimal"
+      value="${(f.threshold||0.3).toFixed(2)}" ${threshDisabled}/>
+    <label style="display:flex;align-items:center;gap:2px;cursor:pointer;flex-shrink:0;">
+      <input type="checkbox" class="filter-exact-cb" data-fi="${fi}" ${f.exact?"checked":""}/>
+      <span class="filter-exact-label">exact</span>
+    </label>
+    <div class="filter-rm-btn" data-rm="${fi}">×</div>
+  </div>`;
+}
+
+function wireFilterRowEvents(container) {
+  container.querySelectorAll(".filter-exact-cb").forEach(cb=>{
+    cb.addEventListener("change",()=>{
+      const fi=+cb.dataset.fi;
+      const ti=container.querySelector(`.filter-thresh-input[data-fi="${fi}"]`);
+      if(ti){ti.disabled=cb.checked;ti.style.opacity=cb.checked?"0.4":"";}
+    });
+  });
+  container.querySelectorAll(".filter-rm-btn").forEach(btn=>{
+    btn.addEventListener("click",e=>{
+      e.stopPropagation();
+      const rows=[...container.querySelectorAll(".filter-row")];
+      if(rows.length<=1)return;
+      rows[+btn.dataset.rm].remove();
+      reindexFilterRows(container);
+    });
+  });
+}
+
+function reindexFilterRows(container) {
+  container.querySelectorAll(".filter-row").forEach((r,i)=>{
+    r.dataset.fi=i;
+    r.querySelectorAll("[data-fi]").forEach(el=>el.dataset.fi=i);
+  });
+}
+
+function addFilterRowToContainer(container) {
+  const fi=container.querySelectorAll(".filter-row").length;
+  const f={query:"",threshold:0.3,mode:"or",exact:false};
+  const div=document.createElement("div");
+  div.innerHTML=buildFilterRowHTML(f,fi,true);
+  const row=div.firstElementChild;
+  container.appendChild(row);
+  wireFilterRowEvents(container);
+  row.querySelector(".filter-query-input").focus();
+}
+
+function readFiltersFromContainer(container) {
+  return [...container.querySelectorAll(".filter-row")].map(row=>({
+    query: row.querySelector(".filter-query-input").value.trim(),
+    threshold: parseFloat(row.querySelector(".filter-thresh-input").value)||0.3,
+    mode: row.querySelector(".filter-mode-sel").value,
+    exact: row.querySelector(".filter-exact-cb").checked,
+  }));
+}
+
+// ── Filter editor (inline in cat list) ───────────────────────────────────────
+function buildEditorHTML(catIdx){
+  const cat=categories[catIdx];
+  const filters=cat.filters||[{query:cat.query||"",threshold:cat.threshold||0.3,mode:"or",exact:false}];
+  const filterRows=filters.map((f,fi)=>buildFilterRowHTML(f,fi,filters.length>1)).join("");
+  return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+    <div class="editor-label" style="margin-bottom:0;">Filters <span style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">(${filters.length})</span></div>
+    <label style="display:flex;align-items:center;gap:4px;cursor:pointer;margin-left:auto;flex-shrink:0;">
+      <span style="font-family:var(--mono);font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.1em;">Color</span>
+      <input type="color" class="cat-color-input" value="${cat.color}" style="width:22px;height:22px;padding:1px;border:1px solid var(--border);border-radius:3px;cursor:pointer;background:none;"/>
+    </label>
+  </div>
+  <div class="filter-rows-wrap">${filterRows}</div>
+  <button class="add-filter-btn">＋ add filter</button>
+  <div class="editor-actions">
+    <button class="editor-save-btn">Save & rescore</button>
+    <button class="editor-cancel-btn">Cancel</button>
+  </div>`;
+}
+
+function wireEditorEvents(editorEl, catIdx){
+  const wrap=editorEl.querySelector(".filter-rows-wrap");
+  wireFilterRowEvents(wrap);
+  editorEl.querySelector(".add-filter-btn").addEventListener("click",e=>{e.stopPropagation();addFilterRowToContainer(wrap);});
+  editorEl.querySelector(".editor-save-btn").addEventListener("click",async e=>{
+    e.stopPropagation();
+    const filters=readFiltersFromContainer(wrap);
+    const cat=categories[catIdx], oldLabel=cat.label;
+    const labelInput=catListEl.querySelector(`.cat-item[data-idx="${catIdx}"] .cat-label-input`);
+    const newLabel=labelInput?labelInput.value.trim():cat.label;
+    const colorInput=editorEl.querySelector(".cat-color-input");
+    const newColor=colorInput?colorInput.value:cat.color;
+    statusEl.textContent="Rescoring…";
+    const res=await fetch("/api/categories/update",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({old_label:oldLabel,category:{label:newLabel,color:newColor,active:cat.active,filters}})});
+    const updated=await res.json();
+    categories[catIdx]=updated;
+    expandedCatIdx=-1;statusEl.textContent=`${points.length} issues`;renderCatPanel();draw();
+  });
+  editorEl.querySelector(".editor-cancel-btn").addEventListener("click",e=>{e.stopPropagation();expandedCatIdx=-1;renderCatPanel();});
+}
+
+function renderCatPanel(){
+  if(!categories.length){
+    catListEl.innerHTML=`<div id="cat-empty">No categories yet.<br>Search and press + Add<br>to save one.</div>`;
+    return;
+  }
+  const html=categories.map((cat,idx)=>`
+    <div class="cat-item ${cat.active?"active":""}${idx===expandedCatIdx?" expanded":""}" data-idx="${idx}">
+      <div class="cat-swatch" style="background:${cat.color}"></div>
+      ${idx===expandedCatIdx
+        ? `<input class="cat-label-input" value="${cat.label.replace(/"/g,"&quot;")}" title="Edit name"/>`
+        : `<div class="cat-label" title="${cat.label}">${cat.label}</div>`
+      }
+      <div class="cat-icon-btn" data-sel="${idx}" title="Select dots on map">◎</div>
+      <div class="cat-icon-btn" data-dup="${idx}" title="Duplicate category">⊕</div>
+      <div class="cat-icon-btn" data-edit="${idx}" title="Edit filters">✎</div>
+      <div class="cat-count">${Object.keys(cat.scores).length}</div>
+      <div class="cat-icon-btn cat-del" data-del="${idx}" title="Delete">×</div>
+    </div>
+    <div class="cat-editor${idx===expandedCatIdx?" open":""}" data-eidx="${idx}">
+      ${idx===expandedCatIdx?buildEditorHTML(idx):""}
+    </div>
+  `).join("");
+  catListEl.innerHTML=html;
+
+  catListEl.querySelectorAll(".cat-item").forEach(el=>{
+    el.addEventListener("click",e=>{
+      if(e.target.closest("[data-sel],[data-edit],[data-del],.cat-label-input"))return;
+      const idx=+el.dataset.idx;
+      categories[idx].active=!categories[idx].active;
+      renderCatPanel();draw();
+    });
+  });
+  catListEl.querySelectorAll("[data-sel]").forEach(btn=>{btn.addEventListener("click",e=>{e.stopPropagation();selectCategoryDots(categories[+btn.dataset.sel]);});});
+  catListEl.querySelectorAll("[data-edit]").forEach(btn=>{
+    btn.addEventListener("click",e=>{
+      e.stopPropagation();
+      const idx=+btn.dataset.edit;
+      expandedCatIdx=expandedCatIdx===idx?-1:idx;
+      renderCatPanel();
+      if(expandedCatIdx===idx){
+        const ed=catListEl.querySelector(`.cat-editor[data-eidx="${idx}"]`);
+        if(ed)ed.scrollIntoView({block:"nearest",behavior:"smooth"});
+      }
+    });
+  });
+  if(expandedCatIdx>=0){
+    const editorEl=catListEl.querySelector(`.cat-editor[data-eidx="${expandedCatIdx}"]`);
+    if(editorEl)wireEditorEvents(editorEl,expandedCatIdx);
+  }
+  catListEl.querySelectorAll("[data-dup]").forEach(btn=>{
+    btn.addEventListener("click",async e=>{
+      e.stopPropagation();
+      const idx=+btn.dataset.dup, cat=categories[idx];
+      const newLabel=cat.label+" (copy)";
+      const newColor=nextCatColor();
+      const filters=(cat.filters||[{query:cat.query||"",threshold:cat.threshold||0.3,mode:"or",exact:false}]);
+      const res=await fetch("/api/categories/add",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({filters,color:newColor,label:newLabel,active:true})});
+      const newCat=await res.json();
+      categories.push(newCat);
+      renderCatPanel();draw();
+    });
+  });
+  catListEl.querySelectorAll("[data-del]").forEach(el=>{
+    el.addEventListener("click",async e=>{
+      e.stopPropagation();
+      const idx=+el.dataset.del, cat=categories[idx];
+      if(expandedCatIdx===idx)expandedCatIdx=-1;
+      categories.splice(idx,1);
+      if(expandedCatIdx>idx)expandedCatIdx--;
+      renderCatPanel();draw();
+      await fetch("/api/categories/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({label:cat.label})});
+    });
+  });
+}
+
+document.getElementById("cat-all").addEventListener("click",()=>{categories.forEach(c=>c.active=true);renderCatPanel();draw();});
+document.getElementById("cat-none").addEventListener("click",()=>{categories.forEach(c=>c.active=false);renderCatPanel();draw();});
+
+// ── Pre-save add-category filter panel ────────────────────────────────────────
+function showAddFiltersPanel(query, threshold, exact) {
+  addFilterRowsWrap.innerHTML = "";
+  const f = {query, threshold, mode:"or", exact};
+  const div = document.createElement("div");
+  div.innerHTML = buildFilterRowHTML(f, 0, false);
+  addFilterRowsWrap.appendChild(div.firstElementChild);
+  wireFilterRowEvents(addFilterRowsWrap);
+  // Set the next auto-color
+  const colorInput = document.getElementById("add-cat-color");
+  if(colorInput) colorInput.value = nextCatColor();
+  addFiltersPanel.classList.add("open");
+}
+
+document.getElementById("add-filter-add-row").addEventListener("click", e => {
+  e.stopPropagation();
+  addFilterRowToContainer(addFilterRowsWrap);
+});
+
+// Panel-level search: runs multi-filter preview on the add-filters-panel
+const panelAddBtn = document.getElementById("panel-add-btn");
+
+document.getElementById("panel-search-btn").addEventListener("click", async e => {
+  e.stopPropagation();
+  const rows = addFilterRowsWrap.querySelectorAll(".filter-row");
+  if(!rows.length) return;
+  const filters = readFiltersFromContainer(addFilterRowsWrap);
+  if(!filters.some(f=>f.query)) return;
+  statusEl.textContent = "Searching…";
+  panelAddBtn.disabled = true; panelAddBtn.style.opacity = "0.35";
+  try {
+    const res = await fetch("/api/preview_category", {method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({filters})});
+    const data = await res.json();
+    scores = {}; allScores = {};
+    for(const {id,score} of (data.scores||[])) scores[id] = score;
+    // Store as active search so the top-bar Add button also works, but use panel state
+    activeSearch = {query: filters[0]?.query||"(panel)", threshold: filters[0]?.threshold||0.3,
+      exact: filters[0]?.exact||false, scores:{...scores}, allScores:{}};
+    const n = data.scores.length;
+    statusEl.textContent = `${n} match${n!==1?"es":""}`;
+    if(n > 0) { panelAddBtn.disabled = false; panelAddBtn.style.opacity = "1"; }
+    updateSidebar(); draw();
+  } catch(err) { statusEl.textContent = "Error"; console.error(err); }
+});
+
+panelAddBtn.addEventListener("click", async e => {
+  e.stopPropagation();
+  if(!activeSearch || !Object.keys(activeSearch.scores).length) return;
+  const color = document.getElementById("add-cat-color").value;
+  const filters = readFiltersFromContainer(addFilterRowsWrap);
+  // Use first query as label, or combine
+  const label = filters.map(f=>f.query).filter(Boolean).join(" / ") || "(category)";
+  const res = await fetch("/api/categories/add", {method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({filters, color, label, active:true})});
+  const cat = await res.json();
+  categories.push(cat);
+  scores={}; allScores={}; activeSearch=null;
+  statusEl.textContent=`${points.length} issues`;
+  panelAddBtn.disabled = true; panelAddBtn.style.opacity = "0.35";
+  hideAddFiltersPanel();
+  renderCatPanel(); updateSidebar(); draw();
+});
+
+function hideAddFiltersPanel() {
+  addFiltersPanel.classList.remove("open");
+  addFilterRowsWrap.innerHTML = "";
+}
+
+// ── Search ────────────────────────────────────────────────────────────────────
+threshEl.addEventListener("input",()=>{threshVal.textContent=(+threshEl.value).toFixed(2);});
+
+async function doSearch(){
+  const q=queryEl.value.trim();if(!q)return;
+  const exact=exactCb.checked, thresh=exact?0:+threshEl.value;
+  statusEl.textContent="Searching…";addBtn.disabled=true;
+  try{
+    const [d1,d2]=await Promise.all([
+      fetch("/api/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({query:q,threshold:thresh,exact})}).then(r=>r.json()),
+      exact?Promise.resolve({scores:[]}):fetch("/api/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({query:q,threshold:0.0})}).then(r=>r.json()),
+    ]);
+    scores={};allScores={};
+    for(const {id,score} of d1.scores)scores[id]=score;
+    for(const {id,score} of (d2.scores||[]))allScores[id]=score;
+    activeSearch={query:q,threshold:thresh,exact,scores:{...scores},allScores:{...allScores}};
+    statusEl.textContent=`${d1.scores.length} match${d1.scores.length!==1?"es":""}`;
+    addBtn.disabled=d1.scores.length===0;
+    updateSidebar();draw();
+    // Show the pre-save filter panel
+    if(d1.scores.length>0) showAddFiltersPanel(q, thresh, exact);
+    else hideAddFiltersPanel();
+  }catch(err){statusEl.textContent="Error";console.error(err);}
+}
+
+document.getElementById("search-btn").addEventListener("click",doSearch);
+queryEl.addEventListener("keydown",e=>{if(e.key==="Enter")doSearch();});
+
+addBtn.addEventListener("click",async()=>{
+  if(!activeSearch||!Object.keys(activeSearch.scores).length)return;
+  const colorInput=document.getElementById("add-cat-color");
+  const color=(colorInput&&addFiltersPanel.classList.contains("open"))?colorInput.value:nextCatColor();
+  let filters;
+  if(addFiltersPanel.classList.contains("open") && addFilterRowsWrap.querySelectorAll(".filter-row").length>0){
+    filters=readFiltersFromContainer(addFilterRowsWrap);
+  } else {
+    filters=[{query:activeSearch.query,threshold:activeSearch.threshold,mode:"or",exact:activeSearch.exact||false}];
+  }
+  const res=await fetch("/api/categories/add",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({filters,color,label:activeSearch.query,active:true})});
+  const cat=await res.json();
+  categories.push(cat);
+  scores={};allScores={};activeSearch=null;
+  queryEl.value="";addBtn.disabled=true;
+  statusEl.textContent=`${points.length} issues`;
+  hideAddFiltersPanel();
+  renderCatPanel();updateSidebar();draw();
+});
+
+document.getElementById("clear-btn").addEventListener("click",()=>{
+  queryEl.value="";scores={};allScores={};activeSearch=null;
+  selected.clear();addBtn.disabled=true;
+  statusEl.textContent=`${points.length} issues`;
+  hideAddFiltersPanel();
+  updateSidebar();draw();
+});
+
+// ── Vertical resize: cat-list ↕ cluster-panel ────────────────────────────────
+(function(){
+  const divider   = document.getElementById("cat-cluster-divider");
+  const catList   = document.getElementById("cat-list");
+  const clPanel   = document.getElementById("cluster-panel");
+  const catpanel  = document.getElementById("catpanel");
+
+  // Set initial heights as flex-basis so the cat-list area is well-defined
+  // cat-list gets flex:1 by default; cluster panel gets a fixed pixel height
+  let clusterH = 220; // px, default when open
+
+  function applyHeights() {
+    const isOpen = document.getElementById("cluster-body").classList.contains("open");
+    if (isOpen) {
+      clPanel.style.height = clusterH + "px";
+      clPanel.style.flexShrink = "0";
+      catList.style.flex = "1";
+      catList.style.minHeight = "60px";
+    }
+  }
+
+  divider.addEventListener("mousedown", e => {
+    const isOpen = document.getElementById("cluster-body").classList.contains("open");
+    if (!isOpen) return;
+    e.preventDefault();
+    divider.classList.add("dragging");
+    const startY     = e.clientY;
+    const startClH   = clPanel.offsetHeight;
+    const totalH     = catpanel.offsetHeight;
+
+    const onMove = e2 => {
+      const dy = startY - e2.clientY; // dragging up → more cluster space
+      clusterH = Math.max(80, Math.min(totalH - 120, startClH + dy));
+      clPanel.style.height = clusterH + "px";
+    };
+    const onUp = () => {
+      divider.classList.remove("dragging");
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  });
+
+  // Patch toggleCluster to apply heights after opening
+  const _orig = window.toggleCluster;
+  window.toggleCluster = function() {
+    _orig && _orig();
+    setTimeout(applyHeights, 0);
+  };
+})();
+
+// ── Clustering ────────────────────────────────────────────────────────────────
+// Toggle param sections when algo changes
+document.getElementById("cluster-algo").addEventListener("change", function() {
+  document.getElementById("params-hdbscan").style.display = this.value === "hdbscan" ? "flex" : "none";
+  document.getElementById("params-agglom").style.display  = this.value === "agglom"  ? "flex" : "none";
+  document.getElementById("params-kmeans").style.display  = this.value === "kmeans"  ? "flex" : "none";
+});
+
+document.getElementById("cluster-run-btn").addEventListener("click", async () => {
+  const algo = document.getElementById("cluster-algo").value;
+  const statusEl2 = document.getElementById("cluster-status");
+  const resultsEl = document.getElementById("cluster-results");
+  statusEl2.textContent = "Clustering…";
+  resultsEl.innerHTML = "";
+
+  // Build payload based on selected algo
+  let payload = { algo };
+  if (algo === "hdbscan") {
+    payload.min_cluster_size = parseInt(document.getElementById("hdbscan-min-cluster-size").value) || 15;
+    payload.min_samples      = parseInt(document.getElementById("hdbscan-min-samples").value) || 5;
+  } else if (algo === "agglom") {
+    payload.k       = parseInt(document.getElementById("agglom-k").value) || 10;
+    payload.linkage = document.getElementById("agglom-linkage").value;
+  } else if (algo === "kmeans") {
+    payload.k = parseInt(document.getElementById("kmeans-k").value) || 10;
+  }
+
+  const DEFAULT_THRESH = 0.5;  // used when adding cluster as category
+
+  try {
+    const res = await fetch("/api/cluster", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(payload)});
+    const data = await res.json();
+    if(data.error) { statusEl2.textContent = "Error: " + data.error; return; }
+    const noiseStr = data.noise > 0 ? ` (${data.noise} noise)` : "";
+    statusEl2.textContent = `${data.clusters.length} cluster${data.clusters.length!==1?"s":""} found${noiseStr}`;
+    resultsEl.innerHTML = data.clusters.map((cl, i) => {
+      const color = CAT_COLORS[i % CAT_COLORS.length];
+      return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
+        <div style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;"></div>
+        <div style="flex:1;font-family:var(--mono);font-size:10px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${cl.label}">${cl.label}</div>
+        <span style="font-family:var(--mono);font-size:9px;color:var(--text-dim);">${cl.size}</span>
+        <button data-ci="${i}" data-label="${cl.label.replace(/"/g,'&quot;')}" data-color="${color}"
+          style="flex-shrink:0;padding:2px 6px;border-radius:3px;background:transparent;border:1px solid ${color};color:${color};font-family:var(--sans);font-size:9px;font-weight:700;cursor:pointer;text-transform:uppercase;white-space:nowrap;"
+          class="cluster-add-btn">+ Add</button>
+      </div>`;
+    }).join("");
+    // Wire add buttons — use a default threshold so the category actually captures similar issues
+    resultsEl.querySelectorAll(".cluster-add-btn").forEach(btn => {
+      btn.addEventListener("click", async e => {
+        e.stopPropagation();
+        const ci = +btn.dataset.ci;
+        const cl = data.clusters[ci];
+        const color = btn.dataset.color;
+        const filters = [{query: cl.label, threshold: DEFAULT_THRESH, mode:"or", exact:false}];
+        const res2 = await fetch("/api/categories/add", {method:"POST",headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({filters, color, label: cl.label, active:true})});
+        const cat = await res2.json();
+        categories.push(cat);
+        btn.textContent = "✓";
+        btn.disabled = true;
+        btn.style.opacity = "0.5";
+        renderCatPanel(); draw();
+      });
+    });
+  } catch(err) {
+    statusEl2.textContent = "Error: " + err.message;
+  }
+});
+
+function toggleCluster(){
+  const body=document.getElementById("cluster-body");
+  const arrow=document.getElementById("cluster-arrow");
+  body.classList.toggle("open");
+  arrow.textContent=body.classList.contains("open")?"▾":"▸";
+}
+
+(async()=>{
+  const [ptData,catData,settData]=await Promise.all([
+    fetch("/api/points").then(r=>r.json()),
+    fetch("/api/categories").then(r=>r.json()),
+    fetch("/api/settings").then(r=>r.json()),
+  ]);
+  points=ptData;categories=catData;
+  document.getElementById("setting-max-display").value=settData.max_display||1000;
+  document.getElementById("setting-seed").value=settData.display_seed||42;
+  const modelSel=document.getElementById("setting-model");
+  (settData.available_models||[]).forEach(m=>{const opt=document.createElement("option");opt.value=m;opt.textContent=m;if(m===settData.active_model)opt.selected=true;modelSel.appendChild(opt);});
+  statusEl.textContent=`${points.length} issues`;
+  renderCatPanel();resize();
+  loadingEl.classList.add("hidden");
+  setTimeout(()=>{loadingEl.style.display="none";},500);
+})();
+</script>
+</body>
+</html>

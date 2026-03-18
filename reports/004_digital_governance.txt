@@ -1,0 +1,15 @@
+Title: Digital Governance in the Age of AI
+
+The rapid proliferation of artificial intelligence across both public and private sectors has created an urgent need for artificial intelligence governance frameworks that are simultaneously flexible enough to accommodate innovation and robust enough to prevent harm. Policymakers in dozens of countries are now racing to establish rules for systems that many of them do not fully understand.
+
+Privacy and data protection concerns sit at the heart of the AI debate. Large language models and other generative systems are trained on vast quantities of personal data, much of it scraped from the web without explicit consent. Algorithmic transparency requirements have been proposed as one mechanism for giving regulators and affected individuals greater insight into how consequential decisions are made.
+
+Facial recognition moratorium proposals have gained traction in several major cities following documented cases of misidentification, particularly among people of colour. Law enforcement agencies argue that the technology is a valuable investigative tool; civil liberties groups counter that the error rates are too high and the surveillance implications too severe for unrestricted deployment.
+
+Social media regulation remains an area of intense legislative interest. Proposals range from platform liability reform to mandatory algorithmic transparency to outright bans on certain design features deemed exploitative of minors. Social media age restrictions have proven popular with the public but technically difficult to implement without introducing new privacy risks.
+
+Cybersecurity policy has moved from the margins to the centre of national security discussions following a series of high-profile breaches affecting critical infrastructure. Ransomware response strategy involves coordination between federal agencies, private sector operators, and international partners, each with different incentives and capabilities.
+
+Net neutrality has cycled through periods of adoption and repeal depending on the composition of regulatory bodies, leaving internet service providers and content companies operating in an environment of persistent uncertainty. Broadband competition, or its absence, underlies much of the net neutrality debate.
+
+The question of data deletion rights and the right to be forgotten continues to create transatlantic tension as European and American approaches to data sovereignty diverge.
