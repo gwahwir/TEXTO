@@ -18,10 +18,11 @@ Category filter schema (categories.json):
   If there are no OR/AND filters, nothing matches (empty set).
 """
 
-import json, pickle, re, unicodedata
+import json, pickle, re, unicodedata, time, threading
 from pathlib import Path
 import numpy as np
 from flask import Flask, render_template, jsonify, request, redirect, url_for
+import training
 
 app = Flask(__name__)
 
@@ -30,6 +31,8 @@ ISSUES_FILE     = "issues.txt"
 CATEGORIES_FILE = "categories.json"
 REPORTS_DIR     = "reports"
 DEFAULT_MAX_DISPLAY = 1000
+FEEDBACK_FILE   = "user_feedback.jsonl"
+DEFAULT_TRAINING_THRESHOLD = 50
 
 # ── Globals ───────────────────────────────────────────────────────────────────
 _models      = {}
@@ -44,6 +47,7 @@ _available_models = [
     "all-mpnet-base-v2",
     "paraphrase-MiniLM-L6-v2",
 ]
+_training_jobs = {}
 
 
 def load_issues():
@@ -187,6 +191,11 @@ def save_user_setting(key, value):
         path.write_text(json.dumps(s, indent=2), encoding="utf-8")
     except Exception as e:
         print(f"[warn] save_user_setting: {e}")
+
+
+def get_training_threshold():
+    """Get the feedback count threshold for auto-training."""
+    return get_user_setting("training_threshold", DEFAULT_TRAINING_THRESHOLD)
 
 
 # ── Multi-filter category logic ───────────────────────────────────────────────
@@ -513,6 +522,194 @@ def highlight_text(body, issues, categories):
     return f"<p>{html}</p>"
 
 
+# ── Continual Learning Routes ────────────────────────────────────────────────
+
+@app.route("/api/feedback/ranking", methods=["POST"])
+def api_feedback_ranking():
+    """Record user's ranking of search results. Auto-trigger training at threshold."""
+    data = request.get_json()
+    query = data.get("query", "")
+    ranked_issues = data.get("ranked_issues", [])
+    threshold = data.get("threshold", 0.5)
+
+    feedback = {
+        "timestamp": time.time(),
+        "query": query,
+        "threshold": threshold,
+        "ranked_issues": ranked_issues,
+        "model_version": _active_model,
+    }
+
+    with open(FEEDBACK_FILE, 'a', encoding='utf-8') as f:
+        f.write(json.dumps(feedback) + '\n')
+
+    # Count total feedback
+    feedback_count = sum(1 for _ in open(FEEDBACK_FILE, 'r', encoding='utf-8'))
+
+    # Auto-trigger training at configurable threshold
+    training_threshold = get_training_threshold()
+    should_auto_train = feedback_count % training_threshold == 0 and feedback_count >= training_threshold
+    training_triggered = False
+
+    if should_auto_train:
+        # Check if no training currently running
+        has_running = any(j.get("status") == "running" for j in _training_jobs.values())
+        if not has_running:
+            # Trigger training automatically
+            def auto_train():
+                try:
+                    output_dir = Path(training.TRAINED_MODELS_DIR) / "latest"
+                    output_dir.mkdir(parents=True, exist_ok=True)
+                    job_id = "finetuned_model"
+                    _training_jobs[job_id] = {"status": "running", "progress": 0.0}
+                    base_model = _active_model if _active_model.startswith("all-") else "all-MiniLM-L6-v2"
+                    training.train_model(base_model, str(output_dir), learning_rate=2e-5, epochs=1)
+                    _training_jobs[job_id] = {"status": "completed", "progress": 1.0, "model_path": str(output_dir)}
+                except Exception as e:
+                    _training_jobs[job_id] = {"status": "failed", "error": str(e)}
+
+            thread = threading.Thread(target=auto_train, daemon=True)
+            thread.start()
+            training_triggered = True
+
+    return jsonify({
+        "ok": True,
+        "feedback_count": feedback_count,
+        "training_triggered": training_triggered,
+        "training_threshold": training_threshold,
+        "next_training_at": ((feedback_count // training_threshold) + 1) * training_threshold
+    })
+
+
+@app.route("/api/feedback/stats", methods=["GET"])
+def api_feedback_stats():
+    """Get feedback statistics."""
+    path = Path(FEEDBACK_FILE)
+    if not path.exists():
+        return jsonify({"total_queries": 0, "total_rankings": 0})
+
+    feedback = []
+    with open(path, 'r', encoding='utf-8') as f:
+        for line in f:
+            if line.strip():
+                try:
+                    feedback.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+
+    if not feedback:
+        return jsonify({"total_queries": 0, "total_rankings": 0})
+
+    total_rankings = sum(len(entry.get("ranked_issues", [])) for entry in feedback)
+
+    return jsonify({
+        "total_queries": len(feedback),
+        "total_rankings": total_rankings,
+        "oldest": min(entry.get("timestamp", 0) for entry in feedback),
+        "newest": max(entry.get("timestamp", 0) for entry in feedback),
+    })
+
+
+@app.route("/api/training/start", methods=["POST"])
+def api_training_start():
+    """Start a fine-tuning job (manual trigger or auto-triggered)."""
+    data = request.get_json()
+    min_feedback = data.get("min_feedback_count", 10)
+    learning_rate = data.get("learning_rate", 2e-5)
+    epochs = data.get("epochs", 1)
+
+    # Check feedback count
+    stats = training.load_feedback_data()
+    if len(stats) < min_feedback:
+        return jsonify({
+            "error": f"Not enough feedback: {len(stats)} < {min_feedback}"
+        }), 400
+
+    # Check if training already running
+    for job_id, status in _training_jobs.items():
+        if status.get("status") == "running":
+            return jsonify({"error": "Training already in progress"}), 409
+
+    # Use fixed output directory (overwrite previous model)
+    job_id = "finetuned_model"
+
+    # Start training in background
+    def train_worker():
+        try:
+            output_dir = Path(training.TRAINED_MODELS_DIR) / "latest"
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            _training_jobs[job_id] = {"status": "running", "progress": 0.0}
+
+            base_model = _active_model if _active_model.startswith("all-") else "all-MiniLM-L6-v2"
+            training.train_model(
+                base_model,
+                str(output_dir),
+                learning_rate=learning_rate,
+                epochs=epochs
+            )
+
+            _training_jobs[job_id] = {"status": "completed", "progress": 1.0, "model_path": str(output_dir)}
+        except Exception as e:
+            _training_jobs[job_id] = {"status": "failed", "error": str(e)}
+            print(f"[error] Training failed: {e}")
+
+    thread = threading.Thread(target=train_worker, daemon=True)
+    thread.start()
+
+    return jsonify({"job_id": job_id, "status": "started"})
+
+
+@app.route("/api/training/status/<job_id>", methods=["GET"])
+def api_training_status(job_id):
+    """Check training job status."""
+    if job_id not in _training_jobs:
+        return jsonify({"error": "Job not found"}), 404
+
+    return jsonify(_training_jobs[job_id])
+
+
+@app.route("/api/models/trained", methods=["GET"])
+def api_list_trained_models():
+    """List all fine-tuned models."""
+    models = training.list_trained_models()
+    return jsonify({"models": models})
+
+
+@app.route("/api/models/load", methods=["POST"])
+def api_load_trained_model():
+    """Load a specific trained model."""
+    global _active_model, _models, _caches, _coords
+
+    data = request.get_json()
+    model_path = data.get("model_path", "")
+
+    if not Path(model_path).exists():
+        return jsonify({"error": "Model not found"}), 404
+
+    try:
+        from sentence_transformers import SentenceTransformer
+
+        # Load the fine-tuned model
+        model_name = Path(model_path).name
+        print(f"[info] Loading fine-tuned model from {model_path}")
+        _models[model_name] = SentenceTransformer(model_path)
+        _active_model = model_name
+        save_user_setting("active_model", model_name)
+
+        # Re-compute embeddings and coordinates
+        print(f"[info] Re-computing embeddings with fine-tuned model...")
+        _caches.clear()
+        _coords.clear()
+        embs = get_embeddings(_issues, model_name)
+        get_coords(embs, model_name)
+
+        return jsonify({"ok": True, "active_model": model_name})
+    except Exception as e:
+        print(f"[error] Failed to load model: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route("/")
@@ -698,6 +895,7 @@ def api_get_settings():
         "available_models": _available_models,
         "total_issues": len(_issues) if _issues else 0,
         "display_seed": get_user_setting("display_seed", 42),
+        "training_threshold": get_training_threshold(),
     })
 
 @app.route("/api/settings", methods=["POST"])
@@ -712,6 +910,10 @@ def api_save_settings():
     if "display_seed" in data:
         save_user_setting("display_seed", int(data["display_seed"]))
         changed = True
+    if "training_threshold" in data:
+        val = max(10, min(500, int(data["training_threshold"])))  # Clamp 10-500
+        save_user_setting("training_threshold", val)
+        # No need to set changed = True for this setting
     if "active_model" in data:
         model_name = data["active_model"]
         if model_name in _available_models:

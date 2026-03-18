@@ -369,6 +369,27 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
           </div>
           <div class="setting-note">Resample picks a new random subset.<br>Apply saves max/model changes.</div>
           <hr class="settings-divider"/>
+          <div class="setting-section">Continual Learning</div>
+          <div class="setting-row">
+            <span class="setting-label">Feedback stats</span>
+            <div id="feedback-stats" style="font-family:var(--mono);font-size:10px;color:var(--text-dim);">Loading...</div>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">Training threshold</span>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <input class="setting-input" id="setting-training-threshold" type="number" min="10" max="500" step="10" value="50" style="width:70px;"/>
+              <span style="font-size:10px;color:var(--text-dim);">rankings</span>
+            </div>
+          </div>
+          <div id="training-status" style="display:none;font-family:var(--mono);font-size:10px;color:var(--text-dim);padding:8px 0;"></div>
+          <div class="setting-row">
+            <span></span>
+            <div style="display:flex;gap:6px;">
+              <button class="setting-apply" id="btn-train" style="display:none;">Force Train Now</button>
+              <button class="file-input-btn" id="btn-revert-base">Revert to Base Model</button>
+            </div>
+          </div>
+          <hr class="settings-divider"/>
           <div class="setting-section">Import / Export Categories</div>
           <label style="font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-bottom:4px;display:block;">Import from JSON</label>
           <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
@@ -556,6 +577,9 @@ function hexToHsl(hex){
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let points=[], scores={}, allScores={}, selected=new Set();
+let userRanking = [];  // Track user's ordered preferences
+let draggedItem = null;  // Currently dragged element
+let activeSearch = null;  // Store active search query and threshold
 let categories=[], activeSearch=null;
 let view={ox:0,oy:0,scale:1};
 let drag=null, panStart=null, spaceDown=false, ctrlDown=false, panMode=false, hovered=null;
@@ -781,6 +805,95 @@ document.getElementById("export-btn").addEventListener("click",async()=>{
   const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));a.download="categories.json";a.click();
 });
 
+// ── Continual Learning ────────────────────────────────────────────────────────
+async function loadFeedbackStats() {
+  try {
+    const [statsRes, settingsRes] = await Promise.all([
+      fetch('/api/feedback/stats'),
+      fetch('/api/settings')
+    ]);
+    const data = await statsRes.json();
+    const settings = await settingsRes.json();
+    const statsEl = document.getElementById('feedback-stats');
+    const threshold = settings.training_threshold || 50;
+
+    // Update threshold input
+    document.getElementById('setting-training-threshold').value = threshold;
+
+    if (data.total_queries === 0) {
+      statsEl.textContent = `No feedback yet. Auto-trains every ${threshold} rankings.`;
+    } else {
+      const nextTrain = ((Math.floor(data.total_queries / threshold) + 1) * threshold);
+      const remaining = nextTrain - data.total_queries;
+      statsEl.textContent = `${data.total_queries} rankings. Next auto-train in ${remaining}.`;
+
+      // Show manual train button if enough feedback
+      if (data.total_queries >= 10) {
+        document.getElementById('btn-train').style.display = 'inline-block';
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load feedback stats:', err);
+  }
+}
+
+// Save training threshold setting
+document.getElementById('setting-training-threshold').addEventListener('change', async (e) => {
+  const val = parseInt(e.target.value);
+  if (val < 10 || val > 500) return;
+
+  await fetch('/api/settings', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({training_threshold: val})
+  });
+
+  statusEl.textContent = `Training threshold set to ${val}`;
+  loadFeedbackStats();
+});
+
+// Manual training trigger
+document.getElementById('btn-train').addEventListener('click', async () => {
+  const res = await fetch('/api/training/start', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      min_feedback_count: 10,
+      learning_rate: 2e-5,
+      epochs: 1
+    })
+  });
+
+  if (res.ok) {
+    const data = await res.json();
+    statusEl.textContent = `Training started manually`;
+    pollTrainingStatus(data.job_id);
+  } else {
+    const error = await res.json();
+    statusEl.textContent = `Training failed: ${error.error}`;
+  }
+});
+
+// Revert to base model
+document.getElementById('btn-revert-base').addEventListener('click', async () => {
+  if (!confirm('Revert to base model? This will reload the app.')) return;
+
+  const res = await fetch('/api/settings', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({active_model: 'all-MiniLM-L6-v2'})
+  });
+
+  if (res.ok) {
+    statusEl.textContent = 'Reverted to base model. Reloading...';
+    setTimeout(() => location.reload(), 1000);
+  }
+});
+
+// Initialize feedback stats on page load
+loadFeedbackStats();
+setInterval(loadFeedbackStats, 30000); // Refresh stats every 30s
+
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 function updateSidebar(){
   const hasLive=Object.keys(scores).length>0;
@@ -792,8 +905,8 @@ function updateSidebar(){
   if(!aboveItems.length&&!belowItems.length&&!selExtra.length){sidebarList.innerHTML=`<div id="sidebar-empty">Drag to select a region<br>or search above<br>to see issues here.</div>`;return;}
   let html="";
   if(aboveItems.length){
-    html+=`<div class="sb-section">Matches (above threshold)</div>`;
-    html+=aboveItems.map(({p,score})=>{const nt=Math.max(0,score-0.01).toFixed(2);return`<div class="sidebar-item above" data-id="${p.id}"><span class="sim" data-thresh="${nt}">${score.toFixed(2)}</span><span>${p.text}</span><span class="set-thresh" data-thresh="${nt}">↓${nt}</span></div>`;}).join("");
+    html+=`<div class="sb-section">Matches (above threshold) <button id="save-ranking-btn" style="display:none;margin-left:10px;font-size:9px;padding:3px 8px;">Save Ranking</button></div>`;
+    html+=aboveItems.map(({p,score})=>{const nt=Math.max(0,score-0.01).toFixed(2);return`<div class="sidebar-item above" data-id="${p.id}" data-score="${score}"><span class="sim" data-thresh="${nt}">${score.toFixed(2)}</span><span>${p.text}</span><span class="set-thresh" data-thresh="${nt}">↓${nt}</span></div>`;}).join("");
   }
   if(belowItems.length){
     html+=`<div class="sb-section">Near matches</div>`;
@@ -803,6 +916,143 @@ function updateSidebar(){
   sidebarList.innerHTML=html;
   sidebarList.querySelectorAll(".sidebar-item").forEach(el=>{el.addEventListener("mouseenter",()=>{hovered=points[+el.dataset.id];draw();});el.addEventListener("mouseleave",()=>{hovered=null;draw();});});
   sidebarList.querySelectorAll("[data-thresh]").forEach(el=>{el.addEventListener("click",e=>{e.stopPropagation();const t=+el.dataset.thresh;threshEl.value=t;threshVal.textContent=t.toFixed(2);doSearch();});});
+  enableRanking();
+}
+
+// ── Drag-and-drop ranking ─────────────────────────────────────────────────────
+function enableRanking() {
+  const items = document.querySelectorAll('.sidebar-item.above');
+  items.forEach((item, idx) => {
+    item.draggable = true;
+    item.dataset.rank = idx;
+    item.style.cursor = 'grab';
+
+    item.addEventListener('dragstart', (e) => {
+      draggedItem = item;
+      item.style.opacity = '0.4';
+      item.style.cursor = 'grabbing';
+      e.dataTransfer.effectAllowed = 'move';
+    });
+
+    item.addEventListener('dragend', (e) => {
+      item.style.opacity = '1';
+      item.style.cursor = 'grab';
+    });
+
+    item.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    });
+
+    item.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (draggedItem && draggedItem !== item) {
+        const container = item.parentNode;
+        const rect = item.getBoundingClientRect();
+        const after = e.clientY > rect.top + rect.height / 2;
+
+        if (after) {
+          container.insertBefore(draggedItem, item.nextSibling);
+        } else {
+          container.insertBefore(draggedItem, item);
+        }
+
+        updateRankings();
+        const saveBtn = document.getElementById('save-ranking-btn');
+        if (saveBtn) saveBtn.style.display = 'inline-block';
+      }
+    });
+  });
+
+  // Wire up save ranking button
+  const saveBtn = document.getElementById('save-ranking-btn');
+  if (saveBtn && !saveBtn.dataset.wired) {
+    saveBtn.dataset.wired = 'true';
+    saveBtn.addEventListener('click', saveRanking);
+  }
+}
+
+function updateRankings() {
+  const items = document.querySelectorAll('.sidebar-item.above');
+  userRanking = [];
+  items.forEach((item, idx) => {
+    const pointId = +item.dataset.id;
+    const point = points[pointId];
+    const score = parseFloat(item.dataset.score) || 0;
+    userRanking.push({
+      text: point.text,
+      score: score,
+      user_rank: idx
+    });
+  });
+}
+
+async function saveRanking() {
+  if (!activeSearch || userRanking.length === 0) return;
+
+  const saveBtn = document.getElementById('save-ranking-btn');
+  if (saveBtn) saveBtn.disabled = true;
+
+  try {
+    const res = await fetch('/api/feedback/ranking', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        query: activeSearch.query,
+        threshold: activeSearch.threshold,
+        ranked_issues: userRanking
+      })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      let msg = `Ranking saved (${data.feedback_count} total)`;
+
+      if (data.training_triggered) {
+        msg += ` - Training started!`;
+        pollTrainingStatus('finetuned_model');
+      } else {
+        msg += ` - Next training at ${data.next_training_at}`;
+      }
+
+      statusEl.textContent = msg;
+      if (saveBtn) {
+        saveBtn.style.display = 'none';
+        saveBtn.disabled = false;
+      }
+    }
+  } catch (err) {
+    statusEl.textContent = `Error saving ranking: ${err.message}`;
+    if (saveBtn) saveBtn.disabled = false;
+  }
+}
+
+function pollTrainingStatus(jobId) {
+  statusEl.textContent = 'Training in progress...';
+
+  const interval = setInterval(async () => {
+    try {
+      const res = await fetch(`/api/training/status/${jobId}`);
+      if (!res.ok) {
+        clearInterval(interval);
+        return;
+      }
+
+      const data = await res.json();
+
+      if (data.status === 'completed') {
+        clearInterval(interval);
+        statusEl.textContent = 'Training done! Model will auto-load on next reload.';
+      } else if (data.status === 'failed') {
+        clearInterval(interval);
+        statusEl.textContent = `Training failed: ${data.error || 'Unknown error'}`;
+      } else {
+        statusEl.textContent = `Training: ${data.status}`;
+      }
+    } catch (err) {
+      clearInterval(interval);
+    }
+  }, 3000);
 }
 
 // ── Category panel ────────────────────────────────────────────────────────────
