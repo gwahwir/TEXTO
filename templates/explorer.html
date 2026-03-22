@@ -390,7 +390,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
             <span></span>
             <div style="display:flex;gap:6px;">
               <button class="setting-apply" id="btn-train" style="display:none;">Force Train Now</button>
-              <button class="file-input-btn" id="btn-load-finetuned" style="display:none;">Load Fine-tuned Model</button>
               <button class="file-input-btn" id="btn-revert-base">Revert to Base Model</button>
             </div>
           </div>
@@ -893,38 +892,6 @@ document.getElementById('btn-train').addEventListener('click', async () => {
 });
 
 // Load fine-tuned model
-async function checkFinetunedModel() {
-  const res = await fetch('/api/models/trained');
-  if (!res.ok) return;
-  const data = await res.json();
-  if (data.models && data.models.length > 0) {
-    document.getElementById('btn-load-finetuned').style.display = '';
-  }
-}
-checkFinetunedModel();
-
-document.getElementById('btn-load-finetuned').addEventListener('click', async () => {
-  if (!confirm('Load fine-tuned model? The page will reload to recompute embeddings.')) return;
-  const modelsRes = await fetch('/api/models/trained');
-  const modelsData = await modelsRes.json();
-  if (!modelsData.models || modelsData.models.length === 0) {
-    alert('No fine-tuned model found.');
-    return;
-  }
-  const modelPath = modelsData.models[0].path;
-  const res = await fetch('/api/models/load', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({model_path: modelPath})
-  });
-  if (res.ok) {
-    statusEl.textContent = 'Fine-tuned model loaded. Reloading...';
-    setTimeout(() => location.reload(), 1000);
-  } else {
-    const err = await res.json();
-    statusEl.textContent = `Failed to load model: ${err.error}`;
-  }
-});
 
 // Revert to base model
 document.getElementById('btn-revert-base').addEventListener('click', async () => {
