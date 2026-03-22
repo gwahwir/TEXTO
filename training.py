@@ -123,6 +123,7 @@ def train_model(base_model_name, output_dir, learning_rate=2e-5, epochs=1):
         save_strategy="epoch",
         logging_steps=max(1, len(samples) // 10),
         save_total_limit=1,  # Only keep the final model
+        report_to="tensorboard",  # Log locally, no account needed
     )
 
     # Loss function for ranking

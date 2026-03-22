@@ -381,11 +381,16 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
               <span style="font-size:10px;color:var(--text-dim);">rankings</span>
             </div>
           </div>
+          <div class="setting-row">
+            <span class="setting-label">Model name</span>
+            <input class="setting-input" id="setting-model-name" type="text" placeholder="e.g. my-model (optional)" style="width:160px;"/>
+          </div>
           <div id="training-status" style="display:none;font-family:var(--mono);font-size:10px;color:var(--text-dim);padding:8px 0;"></div>
           <div class="setting-row">
             <span></span>
             <div style="display:flex;gap:6px;">
               <button class="setting-apply" id="btn-train" style="display:none;">Force Train Now</button>
+              <button class="file-input-btn" id="btn-load-finetuned" style="display:none;">Load Fine-tuned Model</button>
               <button class="file-input-btn" id="btn-revert-base">Revert to Base Model</button>
             </div>
           </div>
@@ -580,7 +585,7 @@ let points=[], scores={}, allScores={}, selected=new Set();
 let userRanking = [];  // Track user's ordered preferences
 let draggedItem = null;  // Currently dragged element
 let activeSearch = null;  // Store active search query and threshold
-let categories=[], activeSearch=null;
+let categories=[];
 let view={ox:0,oy:0,scale:1};
 let drag=null, panStart=null, spaceDown=false, ctrlDown=false, panMode=false, hovered=null;
 let expandedCatIdx = -1;
@@ -773,10 +778,22 @@ settingsMenu.addEventListener("click",e=>e.stopPropagation());
 document.getElementById("settings-apply").addEventListener("click",async()=>{
   const val=parseInt(document.getElementById("setting-max-display").value)||1000;
   const seed=parseInt(document.getElementById("setting-seed").value)||42;
-  const model=document.getElementById("setting-model").value;
+  const modelSel=document.getElementById("setting-model");
+  const model=modelSel.value;
+  const selectedOpt=modelSel.options[modelSel.selectedIndex];
+  const modelPath=selectedOpt.dataset.path||null;
   statusEl.textContent="Applying…";
-  const res=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({max_display:val,display_seed:seed,active_model:model})});
-  if((await res.json()).ok){settingsMenu.classList.remove("open");statusEl.textContent="Reloading…";const ptData=await fetch("/api/points").then(r=>r.json());points=ptData;scores={};allScores={};selected.clear();statusEl.textContent=`${points.length} issues`;updateSidebar();draw();}
+  settingsMenu.classList.remove("open");
+  if(modelPath){
+    // Fine-tuned model — load via dedicated endpoint (triggers re-embedding)
+    statusEl.textContent="Loading fine-tuned model… this may take a minute";
+    const res=await fetch("/api/models/load",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model_path:modelPath})});
+    if((await res.json()).ok){statusEl.textContent="Reloading…";setTimeout(()=>location.reload(),500);}
+    else statusEl.textContent="Failed to load model.";
+  } else {
+    const res=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({max_display:val,display_seed:seed,active_model:model})});
+    if((await res.json()).ok){statusEl.textContent="Reloading…";const ptData=await fetch("/api/points").then(r=>r.json());points=ptData;scores={};allScores={};selected.clear();statusEl.textContent=`${points.length} issues`;updateSidebar();draw();}
+  }
 });
 document.getElementById("settings-randomize").addEventListener("click",async()=>{
   statusEl.textContent="Resampling…";
@@ -860,7 +877,8 @@ document.getElementById('btn-train').addEventListener('click', async () => {
     body: JSON.stringify({
       min_feedback_count: 10,
       learning_rate: 2e-5,
-      epochs: 1
+      epochs: 1,
+      model_name: document.getElementById('setting-model-name').value.trim() || undefined
     })
   });
 
@@ -871,6 +889,40 @@ document.getElementById('btn-train').addEventListener('click', async () => {
   } else {
     const error = await res.json();
     statusEl.textContent = `Training failed: ${error.error}`;
+  }
+});
+
+// Load fine-tuned model
+async function checkFinetunedModel() {
+  const res = await fetch('/api/models/trained');
+  if (!res.ok) return;
+  const data = await res.json();
+  if (data.models && data.models.length > 0) {
+    document.getElementById('btn-load-finetuned').style.display = '';
+  }
+}
+checkFinetunedModel();
+
+document.getElementById('btn-load-finetuned').addEventListener('click', async () => {
+  if (!confirm('Load fine-tuned model? The page will reload to recompute embeddings.')) return;
+  const modelsRes = await fetch('/api/models/trained');
+  const modelsData = await modelsRes.json();
+  if (!modelsData.models || modelsData.models.length === 0) {
+    alert('No fine-tuned model found.');
+    return;
+  }
+  const modelPath = modelsData.models[0].path;
+  const res = await fetch('/api/models/load', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({model_path: modelPath})
+  });
+  if (res.ok) {
+    statusEl.textContent = 'Fine-tuned model loaded. Reloading...';
+    setTimeout(() => location.reload(), 1000);
+  } else {
+    const err = await res.json();
+    statusEl.textContent = `Failed to load model: ${err.error}`;
   }
 });
 
@@ -1497,16 +1549,18 @@ function toggleCluster(){
 }
 
 (async()=>{
-  const [ptData,catData,settData]=await Promise.all([
+  const [ptData,catData,settData,trainedData]=await Promise.all([
     fetch("/api/points").then(r=>r.json()),
     fetch("/api/categories").then(r=>r.json()),
     fetch("/api/settings").then(r=>r.json()),
+    fetch("/api/models/trained").then(r=>r.json()),
   ]);
   points=ptData;categories=catData;
   document.getElementById("setting-max-display").value=settData.max_display||1000;
   document.getElementById("setting-seed").value=settData.display_seed||42;
   const modelSel=document.getElementById("setting-model");
   (settData.available_models||[]).forEach(m=>{const opt=document.createElement("option");opt.value=m;opt.textContent=m;if(m===settData.active_model)opt.selected=true;modelSel.appendChild(opt);});
+  (trainedData.models||[]).forEach(m=>{const opt=document.createElement("option");opt.value=m.name;opt.textContent=`★ ${m.name} (fine-tuned)`;opt.dataset.path=m.path;if(m.name===settData.active_model)opt.selected=true;modelSel.appendChild(opt);});
   statusEl.textContent=`${points.length} issues`;
   renderCatPanel();resize();
   loadingEl.classList.add("hidden");

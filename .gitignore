@@ -30,3 +30,6 @@ Thumbs.db
 # Backup files
 *.bak
 *.bak.*
+
+# Trained models
+trained_models/

@@ -48,6 +48,7 @@ _available_models = [
     "paraphrase-MiniLM-L6-v2",
 ]
 _training_jobs = {}
+_model_paths   = {}  # name -> local path for fine-tuned models
 
 
 def load_issues():
@@ -524,6 +525,26 @@ def highlight_text(body, issues, categories):
 
 # ── Continual Learning Routes ────────────────────────────────────────────────
 
+MAX_TRAINED_MODELS = 3
+
+def _prepare_model_output_dir(model_name):
+    """Ensure output dir exists and enforce the 3-model limit (drop oldest)."""
+    import re
+    safe_name = re.sub(r'[^\w\-]', '_', model_name)
+    models_dir = Path(training.TRAINED_MODELS_DIR)
+    models_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = models_dir / safe_name
+    # Enforce limit: remove oldest models if already at max
+    existing = training.list_trained_models()
+    existing = [m for m in existing if m["name"] != safe_name]  # exclude current target
+    while len(existing) >= MAX_TRAINED_MODELS:
+        oldest = existing.pop()  # list is sorted newest-first
+        import shutil
+        shutil.rmtree(oldest["path"], ignore_errors=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir
+
+
 @app.route("/api/feedback/ranking", methods=["POST"])
 def api_feedback_ranking():
     """Record user's ranking of search results. Auto-trigger training at threshold."""
@@ -558,11 +579,11 @@ def api_feedback_ranking():
             # Trigger training automatically
             def auto_train():
                 try:
-                    output_dir = Path(training.TRAINED_MODELS_DIR) / "latest"
-                    output_dir.mkdir(parents=True, exist_ok=True)
+                    model_name = f"{_active_model}-fine-tuned"
+                    output_dir = _prepare_model_output_dir(model_name)
                     job_id = "finetuned_model"
                     _training_jobs[job_id] = {"status": "running", "progress": 0.0}
-                    base_model = _active_model if _active_model.startswith("all-") else "all-MiniLM-L6-v2"
+                    base_model = _model_paths.get(_active_model, _active_model)
                     training.train_model(base_model, str(output_dir), learning_rate=2e-5, epochs=1)
                     _training_jobs[job_id] = {"status": "completed", "progress": 1.0, "model_path": str(output_dir)}
                 except Exception as e:
@@ -617,6 +638,7 @@ def api_training_start():
     min_feedback = data.get("min_feedback_count", 10)
     learning_rate = data.get("learning_rate", 2e-5)
     epochs = data.get("epochs", 1)
+    model_name = data.get("model_name", "").strip() or f"{_active_model}-fine-tuned"
 
     # Check feedback count
     stats = training.load_feedback_data()
@@ -630,25 +652,20 @@ def api_training_start():
         if status.get("status") == "running":
             return jsonify({"error": "Training already in progress"}), 409
 
-    # Use fixed output directory (overwrite previous model)
     job_id = "finetuned_model"
 
     # Start training in background
     def train_worker():
         try:
-            output_dir = Path(training.TRAINED_MODELS_DIR) / "latest"
-            output_dir.mkdir(parents=True, exist_ok=True)
-
+            output_dir = _prepare_model_output_dir(model_name)
             _training_jobs[job_id] = {"status": "running", "progress": 0.0}
-
-            base_model = _active_model if _active_model.startswith("all-") else "all-MiniLM-L6-v2"
+            base_model = _model_paths.get(_active_model, _active_model)
             training.train_model(
                 base_model,
                 str(output_dir),
                 learning_rate=learning_rate,
                 epochs=epochs
             )
-
             _training_jobs[job_id] = {"status": "completed", "progress": 1.0, "model_path": str(output_dir)}
         except Exception as e:
             _training_jobs[job_id] = {"status": "failed", "error": str(e)}
@@ -692,6 +709,7 @@ def api_load_trained_model():
 
         # Load the fine-tuned model
         model_name = Path(model_path).name
+        _model_paths[model_name] = model_path
         print(f"[info] Loading fine-tuned model from {model_path}")
         _models[model_name] = SentenceTransformer(model_path)
         _active_model = model_name
