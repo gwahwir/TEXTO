@@ -11,5 +11,18 @@
         "exact": false
       }
     ]
+  },
+  {
+    "label": "energy security",
+    "color": "#000075",
+    "active": true,
+    "filters": [
+      {
+        "query": "energy security",
+        "threshold": 0.45,
+        "mode": "or",
+        "exact": false
+      }
+    ]
   }
 ]

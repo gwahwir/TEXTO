@@ -1527,7 +1527,7 @@ function toggleCluster(){
   document.getElementById("setting-seed").value=settData.display_seed||42;
   const modelSel=document.getElementById("setting-model");
   (settData.available_models||[]).forEach(m=>{const opt=document.createElement("option");opt.value=m;opt.textContent=m;if(m===settData.active_model)opt.selected=true;modelSel.appendChild(opt);});
-  (trainedData.models||[]).forEach(m=>{const opt=document.createElement("option");opt.value=m.name;opt.textContent=`★ ${m.name} (fine-tuned)`;opt.dataset.path=m.path;if(m.name===settData.active_model)opt.selected=true;modelSel.appendChild(opt);});
+  (trainedData.models||[]).forEach(m=>{const opt=document.createElement("option");opt.value=m.name;opt.textContent=`★ ${m.name} (fine-tuned from ${m.metadata?.base_model||'unknown'})`;opt.dataset.path=m.path;if(m.name===settData.active_model)opt.selected=true;modelSel.appendChild(opt);});
   statusEl.textContent=`${points.length} issues`;
   renderCatPanel();resize();
   loadingEl.classList.add("hidden");
