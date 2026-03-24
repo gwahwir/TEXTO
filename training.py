@@ -33,12 +33,14 @@ def load_feedback_data():
 
 def convert_to_training_format(feedback_list):
     """
-    Convert user rankings to MultipleNegativesRankingLoss format.
+    Convert user rankings to CoSENTLoss format.
 
-    For each query:
-    - Top-ranked issue = positive example
-    - Lower-ranked issues = hard negatives (weighted by rank distance)
-    - Issues below threshold = negatives
+    CoSENTLoss preserves full ranking order by using rank as label.
+    For each query-document pair:
+    - texts: [query, document_text]
+    - label: user_rank (0 = most relevant, higher = less relevant)
+
+    This uses 100% of ranking information, not just binary relevance.
     """
     training_samples = []
 
@@ -47,35 +49,22 @@ def convert_to_training_format(feedback_list):
         ranked = entry.get("ranked_issues", [])
 
         if not query or len(ranked) < 2:
-            continue  # Need at least positive + negative
+            continue  # Need at least 2 items for ranking
 
-        # Sort by user rank (0 = most relevant)
-        ranked_sorted = sorted(ranked, key=lambda x: x.get("user_rank", 999))
+        # Create one training sample per ranked item
+        for item in ranked:
+            text = item.get("text", "").strip()
+            user_rank = item.get("user_rank")
 
-        # Top item is positive
-        positive = ranked_sorted[0].get("text", "")
-        if not positive:
-            continue
+            if not text or user_rank is None:
+                continue
 
-        # Lower ranked items are negatives
-        negatives = [item.get("text", "") for item in ranked_sorted[1:] if item.get("text")]
-
-        if not negatives:
-            continue
-
-        # Create training sample
-        sample = {
-            "sentence1": query,      # Query/anchor
-            "sentence2": positive,   # Best match
-        }
-
-        # Add up to 2 hard negatives for MultipleNegativesRankingLoss
-        if len(negatives) > 0:
-            sample["sentence3"] = negatives[0]
-        if len(negatives) > 1:
-            sample["sentence4"] = negatives[1]
-
-        training_samples.append(sample)
+            # CoSENTLoss format: (query, document, rank_label)
+            training_samples.append({
+                "query": query,
+                "document": text,
+                "label": float(user_rank)  # Lower rank = more relevant
+            })
 
     return training_samples
 
@@ -106,7 +95,20 @@ def train_model(base_model_name, output_dir, learning_rate=2e-5, epochs=1):
     if len(samples) < 5:
         raise ValueError(f"Not enough valid training samples: {len(samples)} < 5")
 
-    train_dataset = Dataset.from_list(samples)
+    total_ranked_items = sum(len(e.get("ranked_issues", [])) for e in feedback)
+    print(f"[training] Using CoSENTLoss - preserving full ranking order from {total_ranked_items} ranked items")
+
+    # CoSENTLoss expects InputExample format with texts and label
+    from sentence_transformers import InputExample
+    train_examples = [
+        InputExample(texts=[s["query"], s["document"]], label=s["label"])
+        for s in samples
+    ]
+    train_dataset = Dataset.from_dict({
+        "sentence1": [ex.texts[0] for ex in train_examples],
+        "sentence2": [ex.texts[1] for ex in train_examples],
+        "label": [ex.label for ex in train_examples]
+    })
 
     # Load base model
     print(f"[training] Loading base model: {base_model_name}")
@@ -116,7 +118,7 @@ def train_model(base_model_name, output_dir, learning_rate=2e-5, epochs=1):
     args = SentenceTransformerTrainingArguments(
         output_dir=output_dir,
         num_train_epochs=epochs,
-        per_device_train_batch_size=8,
+        per_device_train_batch_size=16,  # Increased for pairwise ranking
         learning_rate=learning_rate,
         warmup_steps=min(100, len(samples) // 2),  # Adjust warmup based on data size
         fp16=False,  # Disable mixed precision for CPU compatibility
@@ -126,11 +128,9 @@ def train_model(base_model_name, output_dir, learning_rate=2e-5, epochs=1):
         report_to="tensorboard",  # Log locally, no account needed
     )
 
-    # Loss function for ranking
-    loss = losses.MultipleNegativesRankingLoss(
-        model=model,
-        scale=20.0,  # Temperature for softmax
-    )
+    # Loss function for ranking - CoSENTLoss preserves full ranking order!
+    # It learns: similarity(query, rank_0) > similarity(query, rank_1) > ...
+    loss = losses.CoSENTLoss(model=model)
 
     # Create trainer
     print(f"[training] Creating trainer with {len(samples)} training samples")
@@ -150,10 +150,14 @@ def train_model(base_model_name, output_dir, learning_rate=2e-5, epochs=1):
     model.save(output_dir)
 
     # Save metadata
+    total_ranked_items = sum(len(e.get("ranked_issues", [])) for e in feedback)
     metadata = {
         "base_model": base_model_name,
         "training_samples": len(samples),
         "feedback_entries": len(feedback),
+        "total_ranked_items": total_ranked_items,
+        "loss_function": "CoSENTLoss",
+        "ranking_aware": True,
         "timestamp": time.time(),
         "learning_rate": learning_rate,
         "epochs": epochs,

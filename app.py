@@ -728,6 +728,44 @@ def api_load_trained_model():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/models/delete", methods=["POST"])
+def api_delete_trained_model():
+    """Delete a specific trained model."""
+    import shutil
+
+    data = request.get_json()
+    model_path = data.get("model_path", "")
+
+    if not model_path:
+        return jsonify({"error": "No model path provided"}), 400
+
+    model_path = Path(model_path)
+
+    if not model_path.exists():
+        return jsonify({"error": "Model not found"}), 404
+
+    # Don't allow deleting if it's currently active
+    model_name = model_path.name
+    if model_name == _active_model:
+        return jsonify({"error": "Cannot delete active model. Switch to base model first."}), 400
+
+    try:
+        # Remove the model directory
+        shutil.rmtree(model_path)
+        print(f"[info] Deleted model: {model_path}")
+
+        # Clean up from cache if loaded
+        if model_name in _models:
+            del _models[model_name]
+        if model_name in _model_paths:
+            del _model_paths[model_name]
+
+        return jsonify({"ok": True, "deleted": model_name})
+    except Exception as e:
+        print(f"[error] Failed to delete model: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route("/")

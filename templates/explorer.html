@@ -319,9 +319,35 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
 .spinner{width:30px;height:30px;border:2px solid var(--border);border-top-color:var(--live);
   border-radius:50%;animation:spin .8s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg);}}
+
+/* Toast Notifications */
+#toast-container{position:fixed;top:20px;right:20px;z-index:10000;display:flex;flex-direction:column;gap:10px;pointer-events:none;}
+.toast{
+  pointer-events:auto;
+  background:rgba(26,29,46,.96);
+  border:1px solid var(--accent);
+  border-radius:8px;
+  padding:12px 20px;
+  color:#fff;
+  font-family:var(--mono);
+  font-size:13px;
+  box-shadow:0 4px 16px rgba(0,0,0,.25);
+  min-width:240px;
+  max-width:400px;
+  animation:toastSlideIn .3s ease;
+  backdrop-filter:blur(8px);
+}
+.toast.success{border-color:#4caf50;}
+.toast.error{border-color:#f44336;}
+.toast.info{border-color:#3a6fff;}
+.toast.warning{border-color:#ff9800;}
+.toast.hiding{animation:toastSlideOut .3s ease;opacity:0;}
+@keyframes toastSlideIn{from{transform:translateX(400px);opacity:0;}to{transform:translateX(0);opacity:1;}}
+@keyframes toastSlideOut{to{transform:translateX(400px);opacity:0;}}
 </style>
 </head>
 <body>
+<div id="toast-container"></div>
 <div id="loading"><div class="spinner"></div><div id="loading-text">Loading issue map…</div></div>
 <div id="app">
   <header id="header">
@@ -391,6 +417,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
             <div style="display:flex;gap:6px;">
               <button class="setting-apply" id="btn-train" style="display:none;">Force Train Now</button>
               <button class="file-input-btn" id="btn-revert-base">Revert to Base Model</button>
+              <button class="file-input-btn" id="btn-delete-model" style="display:none;background:#f44336;border-color:#f44336;">Delete Model</button>
             </div>
           </div>
           <hr class="settings-divider"/>
@@ -534,6 +561,34 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
 </div>
 
 <script>
+// ── Toast Notifications ───────────────────────────────────────────────────────
+function showToast(message, type = 'info', duration = 3000) {
+  console.log('[Toast]', message, type, duration); // Debug log
+  const container = document.getElementById('toast-container');
+  if (!container) {
+    console.error('[Toast] Container not found!');
+    return null;
+  }
+
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+
+  container.appendChild(toast);
+  console.log('[Toast] Added to container');
+
+  // Auto-dismiss after duration
+  if (duration > 0) {
+    setTimeout(() => {
+      toast.classList.add('hiding');
+      setTimeout(() => toast.remove(), 300); // Match animation duration
+    }, duration);
+  }
+
+  return toast; // Return toast element for manual control
+}
+console.log('[Toast] Function loaded');
+
 // ── Config ────────────────────────────────────────────────────────────────────
 const PADDING = 55, DOT_R = 2.8, BELOW_N = 8, HIT_R = 18;
 const C_LIVE = "#2d6a4f", C_SEL = "#1e2030";
@@ -785,7 +840,6 @@ document.getElementById("settings-apply").addEventListener("click",async()=>{
   settingsMenu.classList.remove("open");
   if(modelPath){
     // Fine-tuned model — load via dedicated endpoint (triggers re-embedding)
-    statusEl.textContent="Loading fine-tuned model… this may take a minute";
     const res=await fetch("/api/models/load",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model_path:modelPath})});
     if((await res.json()).ok){statusEl.textContent="Reloading…";setTimeout(()=>location.reload(),500);}
     else statusEl.textContent="Failed to load model.";
@@ -864,7 +918,7 @@ document.getElementById('setting-training-threshold').addEventListener('change',
     body: JSON.stringify({training_threshold: val})
   });
 
-  statusEl.textContent = `Training threshold set to ${val}`;
+  showToast(`Training threshold set to ${val}`, 'success', 2000);
   loadFeedbackStats();
 });
 
@@ -883,11 +937,11 @@ document.getElementById('btn-train').addEventListener('click', async () => {
 
   if (res.ok) {
     const data = await res.json();
-    statusEl.textContent = `Training started manually`;
+    showToast(`🎓 Training started manually`, 'info', 3000);
     pollTrainingStatus(data.job_id);
   } else {
     const error = await res.json();
-    statusEl.textContent = `Training failed: ${error.error}`;
+    showToast(`❌ Training failed: ${error.error}`, 'error', 5000);
   }
 });
 
@@ -904,8 +958,46 @@ document.getElementById('btn-revert-base').addEventListener('click', async () =>
   });
 
   if (res.ok) {
-    statusEl.textContent = 'Reverted to base model. Reloading...';
+    showToast('Reverted to base model. Reloading...', 'info', 2000);
     setTimeout(() => location.reload(), 1000);
+  }
+});
+
+// Delete trained model
+document.getElementById('btn-delete-model').addEventListener('click', async () => {
+  const modelSel = document.getElementById('setting-model');
+  const selectedOpt = modelSel.options[modelSel.selectedIndex];
+  const modelPath = selectedOpt.dataset.path;
+  const modelName = modelSel.value;
+
+  if (!modelPath) {
+    showToast('Please select a fine-tuned model to delete', 'warning', 3000);
+    return;
+  }
+
+  if (!confirm(`Delete model "${modelName}"? This cannot be undone.`)) return;
+
+  const res = await fetch('/api/models/delete', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({model_path: modelPath})
+  });
+
+  if (res.ok) {
+    const data = await res.json();
+    showToast(`✓ Model "${data.deleted}" deleted`, 'success', 3000);
+
+    // Refresh the model list and select base model
+    await fetch('/api/settings', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({active_model: 'all-MiniLM-L6-v2'})
+    });
+
+    setTimeout(() => location.reload(), 1500);
+  } else {
+    const error = await res.json();
+    showToast(`❌ ${error.error}`, 'error', 5000);
   }
 });
 
@@ -1025,35 +1117,36 @@ async function saveRanking() {
 
     if (res.ok) {
       const data = await res.json();
-      let msg = `Ranking saved (${data.feedback_count} total)`;
 
       if (data.training_triggered) {
-        msg += ` - Training started!`;
+        showToast(`✓ Ranking saved (${data.feedback_count} total)`, 'success', 2000);
+        showToast(`🎓 Training started!`, 'info', 5000);
         pollTrainingStatus('finetuned_model');
       } else {
-        msg += ` - Next training at ${data.next_training_at}`;
+        showToast(`✓ Ranking saved (${data.feedback_count}/${data.next_training_at})`, 'success', 3000);
       }
 
-      statusEl.textContent = msg;
       if (saveBtn) {
         saveBtn.style.display = 'none';
         saveBtn.disabled = false;
       }
+      loadFeedbackStats(); // Refresh stats in settings
     }
   } catch (err) {
-    statusEl.textContent = `Error saving ranking: ${err.message}`;
+    showToast(`Error saving ranking: ${err.message}`, 'error', 5000);
     if (saveBtn) saveBtn.disabled = false;
   }
 }
 
 function pollTrainingStatus(jobId) {
-  statusEl.textContent = 'Training in progress...';
+  const progressToast = showToast('⏳ Training in progress...', 'info', 0); // 0 = don't auto-dismiss
 
   const interval = setInterval(async () => {
     try {
       const res = await fetch(`/api/training/status/${jobId}`);
       if (!res.ok) {
         clearInterval(interval);
+        progressToast.remove();
         return;
       }
 
@@ -1061,15 +1154,19 @@ function pollTrainingStatus(jobId) {
 
       if (data.status === 'completed') {
         clearInterval(interval);
-        statusEl.textContent = 'Training done! Model will auto-load on next reload.';
+        progressToast.remove();
+        showToast('✓ Training complete! Reload to use the new model.', 'success', 8000);
+        loadFeedbackStats(); // Refresh stats
       } else if (data.status === 'failed') {
         clearInterval(interval);
-        statusEl.textContent = `Training failed: ${data.error || 'Unknown error'}`;
+        progressToast.remove();
+        showToast(`❌ Training failed: ${data.error || 'Unknown error'}`, 'error', 10000);
       } else {
-        statusEl.textContent = `Training: ${data.status}`;
+        progressToast.textContent = `⏳ Training: ${data.status}`;
       }
     } catch (err) {
       clearInterval(interval);
+      progressToast.remove();
     }
   }, 3000);
 }
@@ -1528,6 +1625,16 @@ function toggleCluster(){
   const modelSel=document.getElementById("setting-model");
   (settData.available_models||[]).forEach(m=>{const opt=document.createElement("option");opt.value=m;opt.textContent=m;if(m===settData.active_model)opt.selected=true;modelSel.appendChild(opt);});
   (trainedData.models||[]).forEach(m=>{const opt=document.createElement("option");opt.value=m.name;opt.textContent=`★ ${m.name} (fine-tuned from ${m.metadata?.base_model||'unknown'})`;opt.dataset.path=m.path;if(m.name===settData.active_model)opt.selected=true;modelSel.appendChild(opt);});
+
+  // Update delete button visibility when model selection changes
+  function updateDeleteButton() {
+    const selectedOpt = modelSel.options[modelSel.selectedIndex];
+    const deleteBtn = document.getElementById('btn-delete-model');
+    deleteBtn.style.display = selectedOpt.dataset.path ? 'inline-block' : 'none';
+  }
+  modelSel.addEventListener('change', updateDeleteButton);
+  updateDeleteButton(); // Initial state
+
   statusEl.textContent=`${points.length} issues`;
   renderCatPanel();resize();
   loadingEl.classList.add("hidden");
