@@ -1,0 +1,13 @@
+services:
+  texto:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./issues.txt:/app/issues.txt
+      - ./categories.json:/app/categories.json
+      - ./settings.json:/app/settings.json
+      - ./user_feedback.jsonl:/app/user_feedback.jsonl
+      - ./reports:/app/reports
+      - ./trained_models:/app/trained_models
+    restart: unless-stopped

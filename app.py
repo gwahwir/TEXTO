@@ -64,8 +64,10 @@ def get_model(model_name=None):
         model_name = _active_model
     if model_name not in _models:
         from sentence_transformers import SentenceTransformer
-        print(f"[info] Loading model '{model_name}' ...")
-        _models[model_name] = SentenceTransformer(model_name)
+        # Use local path if registered, otherwise treat as HuggingFace model ID
+        load_path = _model_paths.get(model_name, model_name)
+        print(f"[info] Loading model '{model_name}' from '{load_path}' ...")
+        _models[model_name] = SentenceTransformer(load_path)
         print("[info] Model ready.")
     return _models[model_name]
 
@@ -162,6 +164,10 @@ def get_active_coords():
 def initialise():
     global _issues, _display_ids, _active_model
     _active_model = get_user_setting("active_model", "all-MiniLM-L6-v2")
+    # Register local path for fine-tuned models so get_model() can find them
+    local_path = Path("trained_models") / _active_model
+    if local_path.exists():
+        _model_paths[_active_model] = str(local_path)
     _issues = load_issues()
     embs = get_embeddings(_issues)
     get_coords(embs)
@@ -1164,4 +1170,4 @@ def api_cluster():
 
 if __name__ == "__main__":
     initialise()
-    app.run(debug=False, port=5000)
+    app.run(debug=False, host="0.0.0.0", port=5000)

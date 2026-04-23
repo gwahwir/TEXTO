@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pkl
+*.pyc
+.git/
+.gitignore
+*.png
+*.bak
+app.log
+toast_test.html
+templates/*.backup
